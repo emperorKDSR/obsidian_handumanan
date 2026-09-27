@@ -1,6 +1,14 @@
-# Active Context: DIWA — Personal OS
+# Active Context: Handumanan — Personal OS
 
-## Current State: Production-Grade Hardening Phase 1 & 2 Deployed
+## Current State: Fork & Remote Repository Initialized (`obsidian_handumanan`)
+- **Fork & Renaming**:
+  - Forked and initialized from upstream `emperorKDSR/obsidian_diwa`.
+  - Renamed plugin identity across `manifest.json`, `package.json`, `versions.json`, `README.md`, `src/types.ts`, `src/constants.ts`, `src/settings.ts`, and `src/main.ts` to `handumanan`.
+  - Backwards-compatible aliases retained for plugin classes, types, setting tabs, and command IDs.
+  - Remote repository `origin` configured to `https://github.com/emperorKDSR/obsidian_handumanan.git` and `upstream` to `https://github.com/emperorKDSR/obsidian_diwa.git`.
+  - Initial commit rebased and pushed cleanly to remote branch `main`.
+
+## Production-Grade Hardening Phase 1 & 2 Deployed
 - **Data Integrity & Atomic File Operations (Phase 1)**:
   - Migrated note mutations, task toggling (`toggleTaskInFile`), and note content updates (`updateNoteContent`) in `CaptureService` and `VaultService` to atomic `app.vault.process()` transactions.
   - Replaced naive `indexOf('\n---\n')` line-splitting with regex frontmatter matching `/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/` across `VaultService` (`editThought`, `editTask`, `updateTaskEntry`) to eliminate silent file truncation on Windows CRLF (`\r\n`).
