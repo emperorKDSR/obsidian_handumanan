@@ -1,7 +1,7 @@
 # System Patterns: Handumanan — Life Journaling OS Architecture
 
 ## 1. Tech Stack & Dependencies
-*   **Compilation**: Compiled via `esbuild.config.mjs` from `src/main.ts` into a single file `main.js`, with style declarations in `styles.css`. Builds are deployed to `/Users/K26/Obsidian/K0000/.obsidian/plugins/handumanan`.
+*   **Compilation**: Compiled via `esbuild.config.mjs` from `src/main.ts` into a single file `main.js`, with style declarations in `styles.css`. Copy `main.js`, `manifest.json`, and `styles.css` to `<vault>/.obsidian/plugins/handumanan/` after building; the build does not deploy automatically.
 *   **TypeScript**: Targeted at `ESNext` modules with strict type checks.
 *   **Dependencies**: Obsidian API, `chrono-node` for natural-language dates.
 
@@ -67,7 +67,7 @@ flowchart TD
 
 The primary interactive hub operates in two complementary psychological states:
 1.  **River Mode (Reading & Reflection)**:
-    *   Centered editorial container clamped to `min(68ch, calc(100vw - 32px))`.
+    *   Full-width container that fills the available Obsidian pane with responsive desktop, tablet, and mobile padding.
     *   Relaxed line height (`1.72`) and organic spacing.
     *   Append-only infinite scrolling (zero DOM destructions when loading older batches).
     *   Hairline day dividers ("Today · September 27", "Yesterday").

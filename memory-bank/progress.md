@@ -6,7 +6,7 @@
 * [x] Conducted 360-degree review with UX, critic, PKM, and system architects
 * [x] Executed production-grade hardening roadmap across data safety, performance, PKM, and UI
 * [x] Compiled bundle with zero errors (`npm run build`)
-* [x] Deployed bundle (`main.js`, `manifest.json`, `styles.css`) to `/Users/K26/Obsidian/K0000/.obsidian/plugins/handumanan/`
+* [x] Deployed bundle (`main.js`, `manifest.json`, `styles.css`) to the selected local vault at `<vault>/.obsidian/plugins/handumanan/`, preserving `data.json`
 
 ---
 
@@ -34,7 +34,7 @@
 * [x] **Circadian Prompts & Pebble-Drop**: Time-aware prompt decks (Morning Awakening, Midday Grounding, Evening Unburdening), plus 1-tap presence check-in via mood beads alone.
 
 ### 4. UI/UX Polish & Community Standards (P2)
-* [x] **Editorial Reading Measure**: Clamped stream container to `min(68ch, calc(100vw - 32px))` with line-height `1.72`.
+* [x] **Full-Pane Reading View**: Removed fixed desktop, journal, and tablet width caps; the stream fills the Obsidian pane with responsive padding and line-height `1.72`.
 * [x] **Sanctuary Mode Immersion**: Faded header and filter carousel to 30% opacity during writing, and added `Escape` shortcut to exit.
 * [x] **Touch Target Optimization**: Enlarged mood beads and action buttons to mobile-friendly touch targets.
 * [x] **WCAG AA Contrast Compliance**: Fixed yellow/gold tokens on light themes with theme-adaptive CSS custom properties.

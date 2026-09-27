@@ -18,7 +18,8 @@
     - **Contemplative Stationery Leaf Cards**: Styled each journal stream entry as an individual card (`pos-journal-leaf`) with hover elevation, subtle mood badge color tinting (calm, grateful, vulnerable, reflective, energized), keepsake heart active states, and inline editor support.
     - **Centered Hairline Day Dividers**: Rendered clean date divider pills centered over a subtle hairline divider.
     - **Balanced Header & Search Bar**: Repositioned search input to center between brand mark and right-aligned icon actions.
+    - **Full-Pane Journal View**: Removed the 820px shell cap, 68ch journal override, and 720px tablet cap so the view fills its Obsidian pane while preserving responsive padding.
 
 ## Verification & Deployment
 - TypeScript compilation: `npm run build` exits 0 with 0 errors and 0 warnings.
-- Production assets (`main.js`, `manifest.json`, `styles.css`) deployed to `/Users/K26/Obsidian/K0000/.obsidian/plugins/handumanan/`.
+- Production assets (`main.js`, `manifest.json`, `styles.css`) built and deployed to the selected local vault at `<vault>/.obsidian/plugins/handumanan/`; existing `data.json` preserved.

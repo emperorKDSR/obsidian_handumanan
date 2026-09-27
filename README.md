@@ -160,5 +160,5 @@ npm run build
 Copy `main.js`, `manifest.json`, and `styles.css` into:
 
 ```text
-<vault>/.obsidian/plugins/diwa/
+<vault>/.obsidian/plugins/handumanan/
 ```

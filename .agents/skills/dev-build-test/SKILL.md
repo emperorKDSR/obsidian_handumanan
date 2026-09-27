@@ -25,7 +25,5 @@ Refer to scripts in [`package.json`](file:///Users/K26/Development/diwa/package.
     ```bash
     npm run build
     ```
-3.  **Deploy Output**: The compilation pipeline automatically copies build files to the active deployment vault plugin directory:
-    *   Path: `/Users/K26/Obsidian/K0000/.obsidian/plugins/obsidian_DIWA` (case-insensitive target; resolves to `Obsidian_diwa` in `esbuild.config.mjs`)
-    *   Assets deployed: `main.js`, `manifest.json`, `styles.css`.
-4.  **Refresh Obsidian**: In Obsidian, go to Settings -> Community Plugins, toggle the **diwa** plugin off and back on to load the latest compiled code. Open developer tools (`Cmd+Option+I` on Mac) to view debug logs.
+3.  **Deploy Output**: The build produces `main.js` in the repository; it does not copy files to a vault. Confirm the active vault with the user, then copy `main.js`, `manifest.json`, and `styles.css` to `<vault>/.obsidian/plugins/handumanan/`. Preserve `data.json` and other vault files.
+4.  **Refresh Obsidian**: In Obsidian, go to Settings -> Community Plugins and toggle **Handumanan** off and back on to load the latest files.
