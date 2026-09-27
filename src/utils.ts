@@ -3,19 +3,7 @@ import * as chrono from 'chrono-node';
 import { FileSuggestModal } from './modals/FileSuggestModal';
 import { ContextSuggestModal } from './modals/ContextSuggestModal';
 import { PersonSuggestModal } from './modals/PersonSuggestModal';
-import type { RecurrenceRule, TaskEntry } from './types';
 import { createVaultBinaryFile, normalizeVaultRelativePath } from './utils/vaultFiles';
-
-export function computeNextDue(currentDue: string, rule: RecurrenceRule): string {
-    const m = moment(currentDue, 'YYYY-MM-DD', true);
-    if (!m.isValid()) return moment().format('YYYY-MM-DD');
-    switch (rule) {
-        case 'daily':    return m.add(1, 'day').format('YYYY-MM-DD');
-        case 'weekly':   return m.add(1, 'week').format('YYYY-MM-DD');
-        case 'biweekly': return m.add(2, 'weeks').format('YYYY-MM-DD');
-        case 'monthly':  return m.add(1, 'month').format('YYYY-MM-DD');
-    }
-}
 
 /** Convert any locale-specific digit characters to ASCII 0-9.
  *  Covers Arabic-Indic (٠-٩), Persian (۰-۹), Devanagari (०-९),
@@ -89,18 +77,6 @@ export function parseNaturalDate(text: string): string | null {
     return null;
 }
 
-export function isTaskDone(task: TaskEntry): boolean {
-    const status = String(task.status || '').toLowerCase();
-    const state = String(task.state || '').toLowerCase();
-    const bucket = String(task.bucketStatus || '').toLowerCase();
-    const lifecycle = String(task.lifecycleStatus || '').toLowerCase();
-    return status === 'done'
-        || state === 'done'
-        || bucket === 'done'
-        || lifecycle === 'done'
-        || !!task.completedAt;
-}
-
 /**
  * Attach inline smart triggers to a capture textarea:
  *   [[            → opens FileSuggestModal → inserts [[Note]] link
@@ -139,12 +115,12 @@ export function attachInlineTriggers(
             return;
         }
 
-        // 2. @word<space> → NLP date parse via chrono-node
-        const atMatch = before.match(/@([^\s]+)\s$/);
-        if (atMatch) {
-            const parsed = parseNaturalDate(atMatch[1]);
+        // 2. //word<space> → NLP date parse via chrono-node
+        const dateMatch = before.match(/\/\/([^\s]+)\s$/);
+        if (dateMatch) {
+            const parsed = parseNaturalDate(dateMatch[1]);
             if (parsed) {
-                const removeFrom = pos - atMatch[0].length;
+                const removeFrom = pos - dateMatch[0].length;
                 const wikiDate = `[[${parsed}]] `;
                 textArea.value = val.substring(0, removeFrom) + wikiDate + val.substring(pos);
                 textArea.setSelectionRange(removeFrom + wikiDate.length, removeFrom + wikiDate.length);
@@ -190,8 +166,8 @@ export function attachInlineTriggers(
             return;
         }
 
-        // 5. / at start of line or after whitespace → open PersonSuggestModal (people mention)
-        if (/(^|\s)\/$/.test(before)) {
+        // 5. @ at start of line or after whitespace → open PersonSuggestModal (people mention)
+        if (/(^|\s)@$/.test(before)) {
             const insertAt = pos - 1;
             textArea.value = val.substring(0, insertAt) + val.substring(pos);
             textArea.setSelectionRange(insertAt, insertAt);
@@ -352,97 +328,3 @@ function insertAtCursor(textarea: HTMLTextAreaElement | HTMLInputElement, link: 
     textarea.dispatchEvent(new Event('input'));
 }
 
-export interface ThoughtCaptureOptions {
-    app: App;
-    containerCls: string;
-    textareaCls: string;
-    chipCls: string;
-    placeholder: string;
-    getContexts?: () => string[];
-    initialContexts?: string[];
-    peopleFolder?: string;
-    attachmentsFolder?: () => string;
-    onSave: (text: string, contexts: string[]) => Promise<void>;
-    setPending: (v: number) => void;
-}
-
-export function createThoughtCaptureWidget(parent: HTMLElement, options: ThoughtCaptureOptions): void {
-    const {
-        app, containerCls, textareaCls, chipCls, placeholder,
-        getContexts, initialContexts, peopleFolder, attachmentsFolder, onSave, setPending
-    } = options;
-
-    const chipRow = parent.createEl('div', { cls: `${containerCls}-chip-row` });
-    let contexts: string[] = initialContexts ? [...initialContexts] : [];
-
-    const addChip = (tag: string) => {
-        if (contexts.includes(tag)) return;
-        contexts.push(tag);
-        const chip = chipRow.createEl('span', { cls: chipCls, text: `#${tag}` });
-        chip.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            contexts = contexts.filter(c => c !== tag);
-            chip.remove();
-        });
-    };
-
-    // Pre-render chips for any initial contexts
-    if (initialContexts) {
-        for (const ctx of initialContexts) addChip(ctx);
-    }
-
-    const textarea = parent.createEl('textarea', {
-        cls: textareaCls,
-        attr: { placeholder, rows: '1' }
-    }) as HTMLTextAreaElement;
-
-    const syncHeight = () => {
-        textarea.style.height = 'auto';
-        textarea.style.overflowY = 'hidden';
-        textarea.style.height = `${textarea.scrollHeight}px`;
-    };
-
-    textarea.addEventListener('focus', () => { setPending(1); syncHeight(); });
-    textarea.addEventListener('input', () => {
-        syncHeight();
-        setPending(textarea.value.trim().length > 0 ? 1 : 0);
-    });
-    textarea.addEventListener('keyup', syncHeight);
-
-    attachInlineTriggers(
-        app,
-        textarea,
-        () => {},
-        addChip,
-        getContexts,
-        peopleFolder,
-    );
-    if (attachmentsFolder) {
-        attachMediaPasteHandler(app, textarea, attachmentsFolder);
-    }
-
-    const save = async () => {
-        const raw = textarea.value.trim();
-        if (!raw) return;
-        const ctxSnapshot = [...contexts];
-        setPending(0);
-        textarea.value = '';
-        textarea.style.height = '';
-        textarea.style.overflowY = '';
-        contexts = [];
-        chipRow.empty();
-        await onSave(raw, ctxSnapshot);
-    };
-
-    textarea.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); }
-        if (e.key === 'Escape') {
-            textarea.value = '';
-            contexts = [];
-            chipRow.empty();
-            setPending(0);
-            textarea.blur();
-        }
-    });
-}

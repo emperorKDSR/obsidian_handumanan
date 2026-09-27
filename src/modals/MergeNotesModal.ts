@@ -10,7 +10,7 @@ export class MergeNotesModal extends Modal {
     private mode: 'new' | 'append' = 'new';
     private newTitle: string = '';
     private targetFilePath: string = '';
-    private trashSources: boolean = true;
+    private trashSources: boolean = false;
 
     constructor(app: App, plugin: DiwaPlugin, entries: CaptureEntry[], onMerged: () => void) {
         super(app);
@@ -24,7 +24,7 @@ export class MergeNotesModal extends Modal {
         contentEl.empty();
         contentEl.addClass('diwa-merge-modal');
 
-        contentEl.createEl('h2', { text: `Merge ${this.entries.length} Notes` });
+        contentEl.createEl('h2', { text: `✦ Weave ${this.entries.length} Reflections` });
 
         // Notes summary
         const summaryContainer = contentEl.createDiv({ cls: 'diwa-merge-summary' });
@@ -38,18 +38,18 @@ export class MergeNotesModal extends Modal {
         if (this.entries.length > 5) {
             summaryContainer.createDiv({
                 cls: 'diwa-merge-summary-more',
-                text: `+ ${this.entries.length - 5} more notes...`
+                text: `+ ${this.entries.length - 5} more reflections...`
             });
         }
 
         // Mode selection
         new Setting(contentEl)
             .setName('Destination')
-            .setDesc('Choose where to merge these notes')
+            .setDesc('Choose where to weave these reflections')
             .addDropdown(dropdown => {
                 dropdown
-                    .addOption('new', 'Create a new note')
-                    .addOption('append', 'Append to existing note')
+                    .addOption('new', 'Create a new reflection')
+                    .addOption('append', 'Append to existing reflection')
                     .setValue(this.mode)
                     .onChange(val => {
                         this.mode = val as 'new' | 'append';
@@ -62,8 +62,8 @@ export class MergeNotesModal extends Modal {
 
         // Trash option
         new Setting(contentEl)
-            .setName('Trash original notes')
-            .setDesc('Move original scratchpad notes to trash after merging')
+            .setName('Trash original reflections')
+            .setDesc('Move original source notes to trash (Disabled by default to preserve atomic memory timestamps)')
             .addToggle(toggle => {
                 toggle.setValue(this.trashSources).onChange(val => {
                     this.trashSources = val;
@@ -76,7 +76,7 @@ export class MergeNotesModal extends Modal {
         cancelBtn.onclick = () => this.close();
 
         const mergeBtn = actionsEl.createEl('button', {
-            text: 'Merge Notes',
+            text: '✦ Weave Reflections',
             cls: 'mod-cta'
         });
         mergeBtn.onclick = async () => {

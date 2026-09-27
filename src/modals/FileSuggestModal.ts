@@ -1,6 +1,6 @@
 import { App, TFile, Notice, SuggestModal } from 'obsidian';
 import { FileOrCreate } from '../types';
-import { createVaultFile } from '../services/VaultService';
+import { createVaultFile } from '../utils/vaultFiles';
 
 export class FileSuggestModal extends SuggestModal<FileOrCreate> {
     onChoose: (file: TFile) => void;

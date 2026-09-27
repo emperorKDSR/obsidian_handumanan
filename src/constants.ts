@@ -1,117 +1,46 @@
-import { HandumananSettings, LifeArea } from './types';
-import { createDefaultGawaLayoutPreferences } from './gawaLayout';
-
-export const DEFAULT_LIFE_AREAS: LifeArea[] = [
-    { id: 'work', label: 'Work', icon: '💼' },
-    { id: 'health', label: 'Health', icon: '🌱' },
-    { id: 'wealth', label: 'Wealth', icon: '💰' },
-    { id: 'growth', label: 'Growth', icon: '💡' },
-];
+import { HandumananSettings } from './types';
 
 export const VIEW_TYPE_HANDUMANAN = "handumanan-view";
 export const VIEW_TYPE_DIWA = VIEW_TYPE_HANDUMANAN;
 export const VIEW_TYPE_DESKTOP_HUB = "handumanan-desktop-hub";
 export const VIEW_TYPE_MOBILE_HUB  = "handumanan-mobile-hub";
 export const VIEW_TYPE_TABLET_HUB  = "handumanan-tablet-hub";
-export const VIEW_TYPE_HANDUMANAN_MINDMAP = "handumanan-mindmap";
-export const VIEW_TYPE_DIWA_MINDMAP = VIEW_TYPE_HANDUMANAN_MINDMAP;
 
-// Desktop Hub ribbon icon — three-pane cockpit layout
-export const DESKTOP_HUB_ICON_ID = "handumanan-desktop-hub-icon";
-export const DESKTOP_HUB_ICON_SVG = `<g transform="translate(8,8) scale(3.3)">
-    <rect x="2" y="3" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
-    <line x1="8" y1="3" x2="8" y2="17" stroke="currentColor" stroke-width="1" stroke-dasharray="0"/>
-    <line x1="16" y1="3" x2="16" y2="17" stroke="currentColor" stroke-width="1"/>
-    <circle cx="5" cy="8" r="1" fill="currentColor"/>
-    <circle cx="5" cy="11" r="1" fill="currentColor"/>
-    <circle cx="5" cy="14" r="1" fill="currentColor"/>
+// Desktop Hub ribbon icon — Journal Sanctuary Book aesthetic
+export const DESKTOP_HUB_ICON_ID = "handumanan-journal-icon";
+export const DESKTOP_HUB_ICON_SVG = `<g transform="translate(10,10) scale(3.5)">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="8" y1="7" x2="16" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="8" y1="11" x2="14" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
 </g>`;
 
-// Custom icon — Tactical reticle (precision targeting, cockpit HUD aesthetic)
-export const KATANA_ICON_ID = "diwa-katana";
-
-// addIcon content — transform maps 24x24 coords into Obsidian's 100×100 icon space
-export const KATANA_ICON_SVG = `<g transform="translate(10,10) scale(3.5)">
-    <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
-    <circle cx="12" cy="12" r="2" fill="currentColor"/>
-    <line x1="12" y1="1.5" x2="12" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="12" y1="17" x2="12" y2="22.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="1.5" y1="12" x2="7" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="17" y1="12" x2="22.5" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-</g>`;
-
-export const NINJA_AVATAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="12" r="9"/>
-    <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>
-    <line x1="12" y1="1.5" x2="12" y2="7"/>
-    <line x1="12" y1="17" x2="12" y2="22.5"/>
-    <line x1="1.5" y1="12" x2="7" y2="12"/>
-    <line x1="17" y1="12" x2="22.5" y2="12"/>
-</svg>`;
-
-export const JOURNAL_ICON_ID = "diwa-journal-icon";
-export const JOURNAL_ICON_SVG = `<g transform="translate(10,10) scale(3.5)">
-    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M15 5l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</g>`;
-
-export const DAILY_ICON_ID = "diwa-daily-icon";
-export const DAILY_ICON_SVG = `<g transform="translate(10,10) scale(3.5)">
-    <circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="2"/>
-    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-</g>`;
-
-export const GRUNDFOS_ICON_ID = "diwa-grundfos-icon";
-export const GRUNDFOS_ICON_SVG = `<g transform="translate(10,10) scale(3.5)">
-    <circle cx="9" cy="14" r="5" fill="none" stroke="currentColor" stroke-width="2"/>
-    <path d="M14 14h5M16.5 14v-6M19 8h-2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-    <path d="M9 9V5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-    <path d="M12 5H6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-</g>`;
-
-export const TASK_ICON_ID = "diwa-task-icon";
-export const TASK_ICON_SVG = `<g transform="translate(10,10) scale(3.5)">
-    <polyline points="9 11 12 14 22 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</g>`;
-
-export const PF_ICON_ID = "diwa-pf-icon";
-export const PF_ICON_SVG = `<g transform="translate(10,10) scale(3.5)">
-    <line x1="12" y1="1" x2="12" y2="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</g>`;
-
-export const SETTINGS_ICON_ID = "diwa-settings-icon";
-export const SETTINGS_ICON_SVG = `<g transform="translate(10,10) scale(3.5)">
-    <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/>
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V11a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</g>`;
-
-export const REVIEW_ICON_ID = "diwa-review-icon";
-export const REVIEW_ICON_SVG = `<g transform="translate(10,10) scale(3.5)">
-    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2"/>
-    <line x1="16" y1="2" x2="16" y2="6" fill="none" stroke="currentColor" stroke-width="2"/>
-    <line x1="8" y1="2" x2="8" y2="6" fill="none" stroke="currentColor" stroke-width="2"/>
-    <line x1="3" y1="10" x2="21" y2="10" fill="none" stroke="currentColor" stroke-width="2"/>
-    <polyline points="9 16 11 18 15 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</g>`;
-
-// Action Icons (Simple paths for 16x16 viewbox)
+// Action Icons (Simple paths for 16x16 / 24x24 viewbox)
 export const ICON_PIN = '<path d="M12 2v8m0 0l4 4m-4-4l-4 4M4 14h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
 export const ICON_EDIT = '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
 export const ICON_TRASH = '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
 export const ICON_PLUS = '<line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
 export const ICON_REPLY = '<polyline points="9 17 4 12 9 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 18v-2a4 4 0 0 0-4-4H4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
-export const ICON_ARROW_RIGHT = '<path d="M5 12h14"/><path d="M13 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
-export const ICON_MESSAGE_SQUARE = '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
-export const ICON_LINK = '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
 export const ICON_EYE = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
 export const ICON_EYE_OFF = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
-export const ICON_CHECKLIST = '<polyline points="9 11 12 14 22 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+export const ICON_SPARKLES = '<path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+export const ICON_HEART = '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+export const ICON_BOOK = '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+
+export const INTROSPECTIVE_PROMPTS = [
+    "What caught your eye or touched you today?",
+    "A feeling or conversation you want to preserve...",
+    "What friction or unexpressed thought are you carrying?",
+    "Where did you feel most alive recently?",
+    "Speak your heart uncensored. What are you keeping from the world?",
+    "How does your body feel right at this moment?",
+    "What is something small you felt grateful for today?",
+    "A lesson life quietly taught you recently..."
+];
 
 export const DEFAULT_SETTINGS: HandumananSettings = {
+    journalFolder: '000 Bin/Handumanan',
     captureFolder: '000 Bin/Handumanan',
-    lifeAreas: DEFAULT_LIFE_AREAS,
     newNoteFolder: '000 Bin',
     attachmentsFolder: '000 Bin/Handumanan Attachments',
     peopleFolder: '000 Bin/Handumanan People',
@@ -119,9 +48,8 @@ export const DEFAULT_SETTINGS: HandumananSettings = {
     tasksFolder: '000 Bin/Handumanan Gawa',
     pfFolder: '000 Bin/Handumanan PF',
     reviewsFolder: '000 Bin/Handumanan Reviews',
-    contexts: [],
-    hiddenContexts: [],
+    privacyShieldDefault: false,
+    promptDeckEnabled: true,
     mobileBottomBarHeight: 56,
     legacyMigrated: false,
-    gawaLayoutPreferences: createDefaultGawaLayoutPreferences(),
 };

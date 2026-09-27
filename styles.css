@@ -144,6 +144,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
 .pos-header-text-btn {
@@ -185,19 +187,37 @@
 }
 
 .pos-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    border-radius: var(--diwa-radius-sm);
     background: transparent;
     border: none;
     cursor: pointer;
-    font-size: 1.1em;
-    padding: 6px;
-    border-radius: var(--diwa-radius-sm);
     color: var(--text-muted);
     transition: var(--diwa-transition);
+    box-sizing: border-box;
+    flex-shrink: 0;
+}
+
+.pos-icon-btn svg {
+    width: 17px;
+    height: 17px;
+    display: block;
 }
 
 .pos-icon-btn:hover {
     background: var(--background-modifier-hover);
     color: var(--text-normal);
+}
+
+.pos-icon-btn.is-active {
+    color: var(--interactive-accent);
 }
 
 /* ── Filter / Life Area Carousel ── */
@@ -1225,3 +1245,474 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
         }
     }
 }
+
+/* ==========================================================================
+   Handumanan — Life Journaling OS: Intimate Stream, Sanctuary & Privacy Shield
+   ========================================================================== */
+
+.pos-journal-container {
+    max-width: min(68ch, calc(100vw - 32px)) !important;
+    margin: 0 auto;
+    line-height: 1.72;
+}
+
+/* Privacy Shield Mode - Explicit Click-to-Reveal only (NO accidental hover leak) */
+.is-privacy-shield-active .pos-leaf-body {
+    filter: blur(9px);
+    user-select: none;
+    transition: filter 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+}
+
+.is-privacy-shield-active .pos-leaf-body.is-unblurred {
+    filter: blur(0px) !important;
+    user-select: auto !important;
+}
+
+/* Sanctuary Mode */
+.is-sanctuary-mode .pos-journal-stream {
+    opacity: 0.2;
+    filter: blur(2px) grayscale(50%);
+    pointer-events: none;
+    transition: all 0.3s ease;
+}
+
+.is-sanctuary-mode .pos-journal-header,
+.is-sanctuary-mode .pos-filter-bar {
+    opacity: 0.3;
+    transition: opacity 0.25s ease;
+}
+
+.is-sanctuary-mode .pos-journal-header:hover,
+.is-sanctuary-mode .pos-filter-bar:hover {
+    opacity: 1;
+}
+
+.is-sanctuary-mode .pos-hero-composer,
+.is-sanctuary-mode .pos-journal-composer {
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.16) !important;
+    border: 1.5px solid var(--interactive-accent) !important;
+    transform: scale(1.012);
+    transition: all 0.25s ease;
+}
+
+/* ── Day Divider with Centered Hairline Badge ── */
+.pos-day-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 28px 0 16px 0;
+    position: relative;
+    width: 100%;
+}
+
+.pos-day-divider::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: var(--background-modifier-border-faint);
+    z-index: 1;
+}
+
+.pos-day-label {
+    position: relative;
+    z-index: 2;
+    background: var(--background-primary);
+    padding: 4px 14px;
+    border-radius: var(--diwa-radius-pill);
+    border: 1px solid var(--background-modifier-border-faint);
+    font-size: 0.78em;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+/* ── Sanctuary Journal Composer Card ── */
+.pos-journal-composer,
+.pos-hero-composer {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border-faint);
+    border-radius: 16px;
+    padding: 18px 20px 14px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.pos-journal-composer:focus-within,
+.pos-hero-composer:focus-within {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08), 0 0 0 2px var(--interactive-accent-hover-transparent, rgba(var(--interactive-accent-rgb), 0.15));
+}
+
+.pos-composer-input-row {
+    width: 100%;
+}
+
+.pos-composer-textarea {
+    width: 100%;
+    min-height: 56px;
+    max-height: 450px;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-family: var(--font-text);
+    font-size: 1.02em;
+    line-height: 1.62;
+    color: var(--text-normal);
+    resize: none;
+    box-sizing: border-box;
+}
+
+.pos-composer-textarea::placeholder {
+    color: var(--text-muted);
+    opacity: 0.75;
+    font-style: italic;
+}
+
+.pos-composer-bottom-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--background-modifier-border-faint);
+    flex-wrap: wrap;
+}
+
+/* Mood Beads in Composer - Touch Friendly & Contemplative */
+.pos-mood-beads-container {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.pos-mood-bead {
+    font-size: 0.82em;
+    font-weight: 500;
+    padding: 5px 12px;
+    min-height: 28px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: var(--diwa-radius-pill);
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border-faint);
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s ease;
+}
+
+.pos-mood-bead:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+    border-color: var(--background-modifier-border);
+}
+
+.pos-mood-bead.is-selected {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+    font-weight: 600;
+}
+
+.pos-composer-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.pos-composer-submit-btn {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: var(--diwa-radius-pill);
+    padding: 6px 18px;
+    font-size: 0.88em;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: transform 0.1s ease, background 0.15s ease, opacity 0.15s ease;
+}
+
+.pos-composer-submit-btn:hover {
+    background: var(--interactive-accent-hover);
+}
+
+.pos-composer-submit-btn:active {
+    transform: scale(0.96);
+}
+
+.pos-composer-submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ── Journal Stream Leaves (Stationery Cards) ── */
+.pos-journal-leaf {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border-faint);
+    border-radius: 14px;
+    padding: 20px 22px;
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    box-sizing: border-box;
+}
+
+.pos-journal-leaf:hover {
+    border-color: var(--background-modifier-border);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
+    transform: translateY(-1px);
+}
+
+.pos-leaf-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.pos-leaf-meta-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82em;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+}
+
+.pos-leaf-select-cb {
+    cursor: pointer;
+    margin: 0;
+}
+
+.pos-leaf-time {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.pos-leaf-mood-badge {
+    padding: 2px 10px;
+    border-radius: var(--diwa-radius-pill);
+    font-size: 0.82em;
+    font-weight: 600;
+    text-transform: capitalize;
+    display: inline-flex;
+    align-items: center;
+}
+
+.pos-mood-calm {
+    background: rgba(52, 211, 153, 0.12);
+    color: var(--color-green, #10b981);
+    border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+.pos-mood-grateful {
+    background: rgba(251, 191, 36, 0.12);
+    color: var(--color-yellow, #f59e0b);
+    border: 1px solid rgba(251, 191, 36, 0.25);
+}
+
+.pos-mood-vulnerable {
+    background: rgba(244, 114, 182, 0.12);
+    color: var(--color-pink, #ec4899);
+    border: 1px solid rgba(244, 114, 182, 0.25);
+}
+
+.pos-mood-reflective {
+    background: rgba(96, 165, 250, 0.12);
+    color: var(--color-blue, #3b82f6);
+    border: 1px solid rgba(96, 165, 250, 0.25);
+}
+
+.pos-mood-energized {
+    background: rgba(251, 146, 60, 0.12);
+    color: var(--color-orange, #f97316);
+    border: 1px solid rgba(251, 146, 60, 0.25);
+}
+
+.pos-leaf-private-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    opacity: 0.8;
+}
+
+.pos-leaf-private-badge svg {
+    width: 14px;
+    height: 14px;
+}
+
+.pos-leaf-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0.5;
+    transition: opacity 0.15s ease;
+}
+
+.pos-journal-leaf:hover .pos-leaf-actions {
+    opacity: 1;
+}
+
+.pos-heart-btn.is-active svg {
+    fill: var(--text-error, #e0565b);
+    stroke: var(--text-error, #e0565b);
+    color: var(--text-error, #e0565b);
+}
+
+.pos-leaf-body {
+    font-size: 1.02em;
+    line-height: 1.74;
+    color: var(--text-normal);
+}
+
+.pos-leaf-body p {
+    margin: 0 0 0.75em 0;
+}
+
+.pos-leaf-body p:last-child {
+    margin-bottom: 0;
+}
+
+.pos-leaf-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.78em;
+    color: var(--text-faint);
+    padding-top: 10px;
+    border-top: 1px solid var(--background-modifier-border-faint);
+}
+
+.pos-leaf-people {
+    color: var(--interactive-accent);
+}
+
+/* ── Inline Editor in Journal Leaf ── */
+.pos-journal-leaf.is-editing {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+}
+
+.pos-inline-edit-textarea {
+    width: 100%;
+    min-height: 100px;
+    border-radius: var(--diwa-radius-sm);
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    padding: 12px;
+    font-family: var(--font-text);
+    font-size: 1em;
+    line-height: 1.65;
+    color: var(--text-normal);
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.pos-inline-edit-textarea:focus {
+    border-color: var(--interactive-accent);
+    outline: none;
+    box-shadow: 0 0 0 2px var(--interactive-accent-hover-transparent, rgba(var(--interactive-accent-rgb), 0.15));
+}
+
+.pos-inline-edit-btns {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.pos-action-btn {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--diwa-radius-pill);
+    color: var(--text-normal);
+    padding: 5px 14px;
+    font-size: 0.85em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--diwa-transition);
+}
+
+.pos-action-btn:hover {
+    background: var(--background-modifier-hover);
+}
+
+.pos-btn-primary {
+    background: var(--interactive-accent) !important;
+    color: var(--text-on-accent) !important;
+    border-color: var(--interactive-accent) !important;
+}
+
+.pos-btn-primary:hover {
+    background: var(--interactive-accent-hover) !important;
+}
+
+/* Theme Adaptive WCAG Contrast Tokens */
+.pos-chip-gold {
+    background: var(--color-yellow-subtle, rgba(234, 179, 8, 0.14)) !important;
+    border-color: var(--color-yellow, #ca8a04) !important;
+    color: var(--text-warning, #a16207) !important;
+}
+
+.pos-sanctuary-btn.is-active {
+    background: var(--interactive-accent) !important;
+    color: var(--text-on-accent) !important;
+}
+
+/* Empty State */
+.pos-stream-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 60px 20px;
+    gap: 12px;
+    color: var(--text-muted);
+}
+
+.pos-stream-empty-state .pos-empty-icon {
+    font-size: 2.4em;
+    margin-bottom: 4px;
+    opacity: 0.8;
+}
+
+.pos-stream-empty-state h3 {
+    font-size: 1.15em;
+    margin: 0;
+    color: var(--text-normal);
+    font-weight: 600;
+}
+
+.pos-stream-empty-state p {
+    font-size: 0.9em;
+    margin: 0;
+    max-width: 360px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+

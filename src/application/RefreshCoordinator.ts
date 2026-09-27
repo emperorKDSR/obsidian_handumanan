@@ -1,14 +1,12 @@
 import { App, TFile } from 'obsidian';
 import { VIEW_TYPE_DESKTOP_HUB } from '../constants';
-import type { DiwaSettings } from '../types';
+import type { HandumananSettings } from '../types';
 import { DesktopHubView } from '../views/DesktopHubView';
 import type { IndexService } from '../services/IndexService';
-import { getCanonicalCapturePath } from '../utils/settingsPaths';
 
-export type RefreshScope = 'all' | 'tasks' | 'thoughts' | 'capture';
+export type RefreshScope = 'all' | 'journal';
 
-const TASK_ONLY_REFRESH_DEBOUNCE_MS = 400;
-const CAPTURE_REFRESH_DEBOUNCE_MS = 250;
+const JOURNAL_REFRESH_DEBOUNCE_MS = 250;
 const DEFAULT_REFRESH_DEBOUNCE_MS = 400;
 
 export class RefreshCoordinator {
@@ -19,11 +17,11 @@ export class RefreshCoordinator {
 
     constructor(
         private app: App,
-        private settings: DiwaSettings,
+        private settings: HandumananSettings,
         private index: IndexService,
     ) {}
 
-    updateSettings(settings: DiwaSettings): void {
+    updateSettings(settings: HandumananSettings): void {
         this.settings = settings;
     }
 
@@ -32,36 +30,20 @@ export class RefreshCoordinator {
         if (until > this._suppressNotifyRefreshUntil) this._suppressNotifyRefreshUntil = until;
     }
 
-    /** Prevent immediate follow-up reindex calls from stale intermediate vault events. */
     bumpReindexCooldown(filePath: string): void {
         this._reindexCooldown.set(filePath, Date.now());
     }
 
     async reindexFile(file: TFile, isMetadataChange = false): Promise<void> {
-        // Deduplicate rapid repeat calls; raw vault 'modify' events within 300ms are coalesced,
-        // while metadataCache 'changed' updates with parsed frontmatter are always accepted.
         const now = Date.now();
         const last = this._reindexCooldown.get(file.path) ?? 0;
         if (!isMetadataChange && (now - last < 300)) return;
         this._reindexCooldown.set(file.path, now);
 
-        const capPath = getCanonicalCapturePath(this.settings);
-
-        if (this.index.isCaptureFile(file.path)) {
-            await this.index.indexCaptureFile(file);
-            this.notifyRefresh('capture');
-        } else if (this.index.isThoughtFile(file.path)) {
-            await this.index.indexThoughtFile(file);
-            this.notifyRefresh('thoughts');
-        } else if (this.index.isTaskFile(file.path)) {
-            await this.index.indexTaskFile(file);
-            this.notifyRefresh('tasks');
-        } else if (this.index.isDueFile(file.path)) {
-            this.index.indexDueFile(file);
-            this.notifyRefresh('all');
+        if (this.index.isJournalFile(file.path)) {
+            await this.index.indexJournalFile(file);
+            this.notifyRefresh('journal');
         }
-
-        if (file.path === capPath) await this.index.buildChecklistIndex();
     }
 
     notifyRefresh(scope: RefreshScope = 'all'): void {
@@ -77,9 +59,10 @@ export class RefreshCoordinator {
             return;
         }
 
-        const debounceMs = this._pendingRefreshScope === 'capture'
-            ? CAPTURE_REFRESH_DEBOUNCE_MS
-            : (this._pendingRefreshScope === 'tasks' ? TASK_ONLY_REFRESH_DEBOUNCE_MS : DEFAULT_REFRESH_DEBOUNCE_MS);
+        const debounceMs = this._pendingRefreshScope === 'journal'
+            ? JOURNAL_REFRESH_DEBOUNCE_MS
+            : DEFAULT_REFRESH_DEBOUNCE_MS;
+
         this._indexDebounceTimer = setTimeout(() => {
             this._indexDebounceTimer = null;
             this._dispatchRefresh();
@@ -96,31 +79,19 @@ export class RefreshCoordinator {
             return;
         }
 
-        const scope = this._pendingRefreshScope ?? 'all';
         this._pendingRefreshScope = null;
 
-        // Refresh all open Desktop Hub (Workspace) views
         const hubLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_DESKTOP_HUB);
         for (const leaf of hubLeaves) {
             const view = leaf.view as DesktopHubView;
-            if (view && typeof view.renderView === 'function') {
-                if (scope === 'tasks' && typeof (view as DesktopHubView & { refreshTasks?: () => void }).refreshTasks === 'function') {
-                    (view as DesktopHubView & { refreshTasks: () => void }).refreshTasks();
-                    continue;
-                }
-                if (view._capturePending > 0 || view._taskPending > 0) continue;
-                if (scope === 'all' && typeof (view as DesktopHubView & { refreshAll?: () => void }).refreshAll === 'function') {
-                    (view as DesktopHubView & { refreshAll: () => void }).refreshAll();
-                } else {
-                    view.renderView();
-                }
+            if (view && typeof view.refreshAll === 'function') {
+                view.refreshAll();
             }
         }
     }
 
     private mergeRefreshScope(current: RefreshScope | null, next: RefreshScope): RefreshScope {
         if (!current || current === next) return next;
-        if (current === 'all' || next === 'all') return 'all';
         return 'all';
     }
 
