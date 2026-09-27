@@ -20,5 +20,8 @@
 - [x] Add service tests for edit conflicts, indexing order/failures, privacy exclusions, and synthetic 10k-entry metadata startup.
 - [x] Simplify the phone header with a native More menu and implement a compact capture dock with 44px touch targets; keep tablet and desktop composition intact.
 - [x] Rebuild and deploy the compact phone layout to the user-approved K0000 vault; verify all three installed assets and preserve `data.json`.
+- [x] Port the DIWA iPhone keyboard gap fix: preserve the outer root scroller, prevent inner stream collapse, and detect Obsidian keyboard state; add focused viewport regression tests.
+- [x] Deploy and hash-verify the keyboard gap fix in the approved K0000 vault without changing `data.json`.
 - [x] Build and deploy the three plugin assets to the user-confirmed local vault; verify copied hashes and preserve `data.json`.
 - [ ] Measure and inspect live Obsidian behavior on desktop/mobile, multiple themes, large vaults, and external sync/editor conflicts.
+- [ ] Confirm the black keyboard gap is gone on the user's iPhone after syncing and restarting Obsidian.

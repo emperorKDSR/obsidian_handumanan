@@ -1084,20 +1084,6 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
         box-sizing: border-box;
     }
 
-    /* When iOS keyboard is open, constrain workspace to visual viewport */
-    .diwa-workspace-root.has-mobile-keyboard {
-        height: calc(100% - var(--diwa-kb-h, 0px)) !important;
-        max-height: calc(100% - var(--diwa-kb-h, 0px)) !important;
-        overflow-y: auto !important;
-    }
-
-    /* Ensure container fills available space when keyboard is up */
-    .diwa-workspace-root.has-mobile-keyboard .pos-scratchpad-container {
-        flex: 1;
-        min-height: 0;
-        padding-bottom: 16px !important;
-    }
-
     /* Compact empty state when keyboard is open */
     .diwa-workspace-root.has-mobile-keyboard .pos-search-empty-state,
     .diwa-workspace-root.has-mobile-keyboard .pos-empty-state {
@@ -1241,16 +1227,6 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
 
     .pos-note-actions {
         opacity: 0.6;
-    }
-}
-
-/* Dynamic Viewport Unit Progressive Enhancement */
-@supports (height: 100dvh) {
-    @media (max-width: 768px) {
-        .diwa-workspace-root:not(.has-mobile-keyboard) {
-            height: 100dvh;
-            max-height: 100dvh;
-        }
     }
 }
 
@@ -1825,14 +1801,16 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
     gap: 6px;
 }
 
-.diwa-workspace-root.has-mobile-keyboard {
-    height: calc(100% - var(--diwa-kb-h, 0px)) !important;
-    max-height: calc(100% - var(--diwa-kb-h, 0px)) !important;
-    overflow-y: auto !important;
+.diwa-workspace-root.has-mobile-keyboard .pos-scratchpad-container.is-phone-layout {
+    flex: 0 0 auto;
+    min-height: 100%;
+    overflow: visible !important;
+    padding-bottom: 16px !important;
 }
 
-.diwa-workspace-root.has-mobile-keyboard .pos-scratchpad-container.is-phone-layout {
-    padding-bottom: 16px;
+.diwa-workspace-root.has-mobile-keyboard .pos-scratchpad-container.is-phone-layout .pos-document-stream {
+    flex: 0 0 auto;
+    min-height: auto;
 }
 
 .pos-journal-container.is-phone-layout .pos-header-bar {
