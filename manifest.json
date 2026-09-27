@@ -1,0 +1,10 @@
+{
+  "id": "handumanan",
+  "name": "Handumanan",
+  "version": "1.0.0",
+  "minAppVersion": "0.16.0",
+  "description": "Quickly capture thoughts and tasks to a file.",
+  "author": "K",
+  "authorUrl": "https://github.com/emperorKDSR",
+  "isDesktopOnly": false
+}

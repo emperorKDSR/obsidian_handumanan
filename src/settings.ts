@@ -1,0 +1,248 @@
+import { App, PluginSettingTab, Setting, TextComponent } from 'obsidian';
+import type DiwaPlugin from './main';
+
+export function bindDeferredTextSetting(
+    text: TextComponent,
+    initialValue: string,
+    onCommit: (value: string) => Promise<void>,
+): () => Promise<void> {
+    let draftValue = initialValue;
+    let committedValue = initialValue;
+    let saveChain = Promise.resolve();
+
+    const commitValue = (value: string): Promise<void> => {
+        if (value === committedValue) return saveChain;
+        saveChain = saveChain
+            .catch(() => undefined)
+            .then(async () => {
+                if (value === committedValue) return;
+                await onCommit(value);
+                committedValue = value;
+            });
+        return saveChain;
+    };
+
+    text
+        .setValue(initialValue)
+        .onChange((value) => {
+            draftValue = value;
+        });
+
+    const flushDraft = (): Promise<void> => commitValue(draftValue);
+    text.inputEl.addEventListener('blur', () => {
+        void flushDraft();
+    });
+    text.inputEl.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        void flushDraft();
+        text.inputEl.blur();
+    });
+
+    return flushDraft;
+}
+
+export class HandumananSettingTab extends PluginSettingTab {
+    plugin: DiwaPlugin;
+
+    constructor(app: App, plugin: DiwaPlugin) {
+        super(app, plugin);
+        this.plugin = plugin;
+    }
+
+    display(): void {
+        const { containerEl } = this;
+        containerEl.empty();
+        containerEl.createEl('h2', { text: 'Handumanan — Personal OS Settings' });
+
+        // ── 1. Storage & Workspace ──
+        containerEl.createEl('h3', { text: 'Storage & Workspace' });
+
+        new Setting(containerEl)
+            .setName('Capture Folder')
+            .setDesc('Root folder for continuous workspace atomic notes (partitioned automatically by YYYY/MM).')
+            .addText(text => {
+                text.setPlaceholder('000 Bin/Handumanan');
+                bindDeferredTextSetting(text, this.plugin.settings.captureFolder ?? '000 Bin/Handumanan', async (value) => {
+                    await this.plugin.updateSetting('captureFolder', value);
+                });
+            });
+
+        new Setting(containerEl)
+            .setName('New Note Folder')
+            .setDesc('Default destination folder when merging or creating new notes.')
+            .addText(text => {
+                text.setPlaceholder('000 Bin');
+                bindDeferredTextSetting(text, this.plugin.settings.newNoteFolder ?? '000 Bin', async (value) => {
+                    await this.plugin.updateSetting('newNoteFolder', value);
+                });
+            });
+
+        new Setting(containerEl)
+            .setName('Attachments Folder')
+            .setDesc('Folder where pasted images and embedded assets are saved.')
+            .addText(text => {
+                text.setPlaceholder('000 Bin/Handumanan Attachments');
+                bindDeferredTextSetting(text, this.plugin.settings.attachmentsFolder ?? '000 Bin/Handumanan Attachments', async (value) => {
+                    await this.plugin.updateSetting('attachmentsFolder', value);
+                });
+            });
+
+        // ── 2. Life Areas Taxonomy ──
+        containerEl.createEl('h3', { text: 'Life Areas Taxonomy' });
+        const currentAreas = [...(this.plugin.settings.lifeAreas || [])];
+
+        currentAreas.forEach((area, i) => {
+            const rowSetting = new Setting(containerEl);
+            rowSetting.setName(`${area.icon || '🏷️'} ${area.label}`);
+            rowSetting.setDesc(`Tag identifier: #${area.id}`);
+
+            rowSetting.addText(text => {
+                text.setPlaceholder('Emoji')
+                    .setValue(area.icon);
+                text.inputEl.style.width = '60px';
+                text.inputEl.style.textAlign = 'center';
+                text.onChange(async (val) => {
+                    currentAreas[i] = { ...currentAreas[i], icon: val.trim() };
+                    rowSetting.setName(`${currentAreas[i].icon || '🏷️'} ${currentAreas[i].label}`);
+                    await this.plugin.updateSetting('lifeAreas', [...currentAreas], 'all');
+                });
+            });
+
+            rowSetting.addText(text => {
+                text.setPlaceholder('Label')
+                    .setValue(area.label);
+                text.onChange(async (val) => {
+                    const newLabel = val.trim();
+                    const newId = newLabel.toLowerCase().replace(/[^a-z0-9_-]/g, '_') || `area_${i}`;
+                    currentAreas[i] = { ...currentAreas[i], label: newLabel, id: newId };
+                    rowSetting.setName(`${currentAreas[i].icon || '🏷️'} ${currentAreas[i].label}`);
+                    rowSetting.setDesc(`Tag identifier: #${currentAreas[i].id}`);
+                    await this.plugin.updateSetting('lifeAreas', [...currentAreas], 'all');
+                });
+            });
+
+            rowSetting.addButton(btn => {
+                btn.setButtonText('Delete')
+                    .setWarning()
+                    .onClick(async () => {
+                        currentAreas.splice(i, 1);
+                        await this.plugin.updateSetting('lifeAreas', [...currentAreas], 'all');
+                        this.display();
+                    });
+            });
+        });
+
+        new Setting(containerEl)
+            .setName('Add Life Area')
+            .setDesc('Add a new life area category to your scratchpad')
+            .addButton(btn => {
+                btn.setButtonText('+ Add Area')
+                    .setCta()
+                    .onClick(async () => {
+                        const newAreas = [
+                            ...(this.plugin.settings.lifeAreas || []),
+                            {
+                                id: `area_${Date.now().toString().slice(-4)}`,
+                                label: 'New Area',
+                                icon: '⭐'
+                            }
+                        ];
+                        await this.plugin.updateSetting('lifeAreas', newAreas, 'all');
+                        this.display();
+                    });
+            });
+
+        // ── 3. Device & Mobile Layout ──
+        containerEl.createEl('h3', { text: 'Mobile & Layout' });
+
+        new Setting(containerEl)
+            .setName('Mobile Bottom Bar Height')
+            .setDesc('Height (px) reserved above Obsidian mobile bottom navigation bar so the sticky composer stays visible.')
+            .addSlider((slider) => {
+                slider
+                    .setLimits(0, 100, 1)
+                    .setDynamicTooltip()
+                    .setValue(this.plugin.settings.mobileBottomBarHeight ?? 56)
+                    .onChange(async (value) => {
+                        await this.plugin.updateSetting('mobileBottomBarHeight', value);
+                    });
+            });
+
+        // ── 4. Contexts & Vault Tags ──
+        containerEl.createEl('h3', { text: 'Contexts & Vault Tags' });
+
+        new Setting(containerEl)
+            .setName('Manage Contexts')
+            .setDesc('Scan vault to populate and synchronize hashtag suggestions.')
+            .addButton(btn => btn.setButtonText('Scan Vault').onClick(async () => {
+                const found = await this.plugin.index.scanForContexts();
+                let added = 0;
+                found.forEach(c => {
+                    if (!this.plugin.settings.contexts.includes(c)) {
+                        this.plugin.settings.contexts.push(c);
+                        added++;
+                    }
+                });
+                if (added > 0) {
+                    await this.plugin.saveSettings();
+                    this.display();
+                }
+            }));
+
+        // ── 5. Advanced Vault Folders ──
+        containerEl.createEl('h3', { text: 'Legacy & Advanced Folders' });
+
+        new Setting(containerEl)
+            .setName('Thoughts Folder')
+            .setDesc('Directory for standalone thought notes.')
+            .addText(text => {
+                text.setPlaceholder('000 Bin/Handumanan');
+                bindDeferredTextSetting(text, this.plugin.settings.thoughtsFolder, async (value) => {
+                    await this.plugin.updateSetting('thoughtsFolder', value);
+                });
+            });
+
+        new Setting(containerEl)
+            .setName('Gawa Tasks Folder')
+            .setDesc('Directory for standalone Gawa task notes.')
+            .addText(text => {
+                text.setPlaceholder('000 Bin/Handumanan Gawa');
+                bindDeferredTextSetting(text, this.plugin.settings.tasksFolder, async (value) => {
+                    await this.plugin.updateSetting('tasksFolder', value);
+                });
+            });
+
+        new Setting(containerEl)
+            .setName('Bulsa Obligations Folder')
+            .setDesc('Directory for Bulsa recurring dues and obligations.')
+            .addText(text => {
+                text.setPlaceholder('000 Bin/Handumanan PF');
+                bindDeferredTextSetting(text, this.plugin.settings.pfFolder, async (value) => {
+                    await this.plugin.updateSetting('pfFolder', value);
+                });
+            });
+
+        new Setting(containerEl)
+            .setName('People Folder')
+            .setDesc('Directory for contact notes.')
+            .addText(text => {
+                text.setPlaceholder('000 Bin/Handumanan People');
+                bindDeferredTextSetting(text, this.plugin.settings.peopleFolder ?? '000 Bin/Handumanan People', async (value) => {
+                    await this.plugin.updateSetting('peopleFolder', value);
+                });
+            });
+
+        new Setting(containerEl)
+            .setName('Reviews Folder')
+            .setDesc('Root directory for periodic review notes.')
+            .addText(text => {
+                text.setPlaceholder('000 Bin/Handumanan Reviews');
+                bindDeferredTextSetting(text, this.plugin.settings.reviewsFolder ?? '000 Bin/Handumanan Reviews', async (value) => {
+                    await this.plugin.updateSetting('reviewsFolder', value);
+                });
+            });
+    }
+}
+
+export { HandumananSettingTab as DiwaSettingTab };

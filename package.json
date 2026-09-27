@@ -1,0 +1,35 @@
+{
+  "name": "obsidian_handumanan",
+  "version": "1.0.0",
+  "description": "handumanan: Quickly capture thoughts and tasks to a file.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "clean": "node -e \"const fs=require('fs'); ['main.js'].forEach(f => fs.rmSync(f, {force:true, recursive:true}))\"",
+    "version": "node -p \"require('./manifest.json').version\""
+  },
+  "keywords": [],
+  "author": "K",
+  "license": "MIT",
+  "devDependencies": {
+
+    "@types/node": "^25.6.0",
+    "@typescript-eslint/eslint-plugin": "8.58.2",
+    "@typescript-eslint/parser": "8.58.2",
+    "builtin-modules": "5.1.0",
+    "esbuild": "0.28.0",
+    "moment": "^2.30.1",
+    "obsidian": "^1.12.3",
+    "tslib": "2.8.1",
+    "typescript": "6.0.3"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.43.1",
+    "chrono-node": "^2.9.0"
+  }
+}

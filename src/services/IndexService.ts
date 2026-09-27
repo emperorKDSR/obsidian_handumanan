@@ -1,0 +1,975 @@
+import { App, TFile, moment } from 'obsidian';
+import { DiwaSettings, ThoughtEntry, TaskEntry, DueEntry, TaskBucketStatus, CaptureEntry, CaptureTaskItem } from '../types';
+import { extractWikiLinks } from '../utils/wikilinks';
+import { getThoughtDisplayTitle, inferJournalType } from '../journal/shared';
+import { normalizeThoughtTopics, toStoredThoughtTopic } from '../utils/topics';
+import { splitTaskBodyAndCommentSuffix } from '../utils/taskComments';
+import { getCanonicalCapturePath, normalizeConfiguredSettingPath } from '../utils/settingsPaths';
+import { normalizeVaultRelativePath } from '../utils/vaultFiles';
+
+export interface ChecklistItem {
+    text: string;
+    done: boolean;
+    line: string;
+}
+
+export interface ThoughtChecklistItem {
+    filePath: string;
+    text: string;
+    line: string;
+    lineIndex: number;
+}
+
+type IndexRebuildSelection = {
+    thoughts?: boolean;
+    tasks?: boolean;
+    dues?: boolean;
+    checklist?: boolean;
+    captures?: boolean;
+};
+
+export class IndexService {
+    app: App;
+    settings: DiwaSettings;
+
+    /** Normalize a raw frontmatter context value to a clean string[].
+     *  Handles: string scalar, string[], missing/null, and '#'-prefixed values. */
+    static normalizeContext(raw: unknown): string[] {
+        if (!raw) return [];
+        let arr: any[];
+        if (Array.isArray(raw)) {
+            arr = raw;
+        } else if (typeof raw === 'string') {
+            arr = raw.split(',');
+        } else {
+            arr = [raw];
+        }
+        return arr.map(v => String(v).replace(/^#+/, '').trim()).filter(Boolean);
+    }
+
+    /** Normalize a raw frontmatter string-array field (e.g. sourceThoughtIds).
+     *  Handles: YAML list, comma-separated string scalar, missing/null. */
+    static normalizeStringArray(raw: unknown): string[] {
+        if (!raw) return [];
+        if (Array.isArray(raw)) return raw.map(v => String(v).trim()).filter(Boolean);
+        // single string — may be comma-separated
+        return String(raw).split(',').map(s => s.trim()).filter(Boolean);
+    }
+
+    /** Normalize links object arrays (e.g. links.tasks / links.thoughts). */
+    static normalizeLinksArray(rawLinks: unknown, key: 'tasks' | 'thoughts'): string[] {
+        if (!rawLinks || typeof rawLinks !== 'object') return [];
+        const record = rawLinks as Record<string, unknown>;
+        return IndexService.normalizeStringArray(record[key]);
+    }
+
+    static normalizeDueCategory(raw: unknown): string | undefined {
+        if (Array.isArray(raw)) {
+            return raw
+                .map((value) => String(value).trim().replace(/^#+/, ''))
+                .find(Boolean);
+        }
+        if (raw === null || raw === undefined) return undefined;
+        const candidate = String(raw).split(/[,\s]/)[0]?.trim().replace(/^#+/, '');
+        return candidate || undefined;
+    }
+
+    /** Read a frontmatter field by trying multiple key aliases. */
+    static getFrontmatterValue(frontmatter: Record<string, unknown>, keys: string[]): unknown {
+        for (const key of keys) {
+            if (Object.prototype.hasOwnProperty.call(frontmatter, key)) return frontmatter[key];
+        }
+        return undefined;
+    }
+
+    /** Extract and loosely parse frontmatter when metadataCache is unavailable. */
+    static parseFrontmatterFallback(content: string): Record<string, unknown> | null {
+        const blockMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+        if (!blockMatch) return null;
+
+        const result: Record<string, unknown> = {};
+        const lines = blockMatch[1].split(/\r?\n/);
+        let currentListKey: string | null = null;
+
+        for (const line of lines) {
+            const keyMatch = line.match(/^\s*([A-Za-z0-9_-]+)\s*:\s*(.*)\s*$/);
+            if (keyMatch) {
+                const key = keyMatch[1];
+                const rawValue = keyMatch[2];
+                currentListKey = null;
+
+                if (!rawValue) {
+                    result[key] = '';
+                    currentListKey = key;
+                    continue;
+                }
+
+                // Do NOT parse Obsidian wikilinks [[...]] as YAML lists — they start with [[
+                const bracketList = !rawValue.startsWith('[[') && rawValue.match(/^\[(.*)\]$/);
+                if (bracketList) {
+                    result[key] = bracketList[1]
+                        .split(',')
+                        .map((item) => item.trim().replace(/^['"]|['"]$/g, ''))
+                        .filter(Boolean);
+                    continue;
+                }
+                // Strip wikilink wrapper [[...]] from scalar values (e.g. due: [[2026-04-05]])
+                if (rawValue.startsWith('[[') && rawValue.endsWith(']]')) {
+                    result[key] = rawValue.slice(2, -2).trim();
+                    continue;
+                }
+
+                const lower = rawValue.toLowerCase();
+                if (lower === 'true') {
+                    result[key] = true;
+                    continue;
+                }
+                if (lower === 'false') {
+                    result[key] = false;
+                    continue;
+                }
+
+                result[key] = rawValue.replace(/^['"]|['"]$/g, '');
+                continue;
+            }
+
+            if (!currentListKey) continue;
+            const listItem = line.match(/^\s*-\s*(.*)\s*$/);
+            if (!listItem) {
+                if (line.trim()) currentListKey = null;
+                continue;
+            }
+            const normalized = listItem[1].trim().replace(/^['"]|['"]$/g, '');
+            const existing = result[currentListKey];
+            if (Array.isArray(existing)) existing.push(normalized);
+            else result[currentListKey] = normalized ? [normalized] : [];
+        }
+
+        return result;
+    }
+
+    /** Returns all unique non-empty topic strings across the thought index. */
+    getExistingTopics(): string[] {
+        const seen = new Set<string>();
+        for (const entry of this.thoughtIndex.values()) {
+            for (const topic of normalizeThoughtTopics(entry.topic)) {
+                seen.add(topic);
+            }
+        }
+        return Array.from(seen).sort();
+    }
+    
+    // Memory Indices
+    captureIndex: Map<string, CaptureEntry> = new Map();
+    thoughtIndex: Map<string, ThoughtEntry> = new Map();
+    taskIndex: Map<string, TaskEntry> = new Map();
+    // ob-perf-03: Full DueEntry index — DuesTab reads from here instead of scanning vault on every render
+    dueIndex: Map<string, DueEntry> = new Map();
+    checklistIndex: ChecklistItem[] = [];
+    private _thoughtChecklistMap: Map<string, ThoughtChecklistItem[]> = new Map();
+    private _thoughtDoneChecklistMap: Map<string, ThoughtChecklistItem[]> = new Map();
+
+    get thoughtChecklistIndex(): ThoughtChecklistItem[] {
+        const result: ThoughtChecklistItem[] = [];
+        this._thoughtChecklistMap.forEach(items => result.push(...items));
+        return result;
+    }
+
+    get thoughtDoneChecklistIndex(): ThoughtChecklistItem[] {
+        const result: ThoughtChecklistItem[] = [];
+        this._thoughtDoneChecklistMap.forEach(items => result.push(...items));
+        return result;
+    }
+    
+    // Performance Cache (Synchronous Access)
+    radarQueue: TaskEntry[] = [];
+    totalDues: number = 0;
+    private _activeTasksFolder: string;
+    private _lastIndexedTasksFolderSetting: string;
+    private _lastIndexedThoughtsFolderSetting: string;
+    private _lastIndexedPfFolderSetting: string;
+    private _lastIndexedCapturePath: string;
+    private _lastIndexedCaptureFolderSetting: string;
+
+    constructor(app: App, settings: DiwaSettings) {
+        this.app = app;
+        this.settings = settings;
+        const initialTasksFolder = this.getConfiguredTasksFolder();
+        const initialThoughtsFolder = this.getConfiguredThoughtsFolder();
+        const initialPfFolder = this.getConfiguredPfFolder();
+        const initialCapturePath = this.getConfiguredCapturePath();
+        const initialCaptureFolder = this.getConfiguredCaptureFolder();
+        this._activeTasksFolder = initialTasksFolder;
+        this._lastIndexedTasksFolderSetting = initialTasksFolder;
+        this._lastIndexedThoughtsFolderSetting = initialThoughtsFolder;
+        this._lastIndexedPfFolderSetting = initialPfFolder;
+        this._lastIndexedCapturePath = initialCapturePath;
+        this._lastIndexedCaptureFolderSetting = initialCaptureFolder;
+    }
+
+    private normalizeVaultPath(path: string): string {
+        return normalizeVaultRelativePath(path, 'path');
+    }
+
+    private normalizeConfiguredPath(path: string | undefined, fallback: string, label: string): string {
+        return normalizeConfiguredSettingPath(path, fallback, label);
+    }
+
+    private pathIsInFolder(path: string, folder: string): boolean {
+        const normalizedPath = this.normalizeVaultPath(path).toLowerCase();
+        const normalizedFolder = this.normalizeVaultPath(folder).toLowerCase();
+        if (normalizedFolder === '') return true;
+        return normalizedPath === normalizedFolder || normalizedPath.startsWith(`${normalizedFolder}/`);
+    }
+
+    private getConfiguredTasksFolder(): string {
+        return this.normalizeConfiguredPath(this.settings.tasksFolder, '000 Bin/DIWA Gawa', 'tasksFolder');
+    }
+
+    private getConfiguredThoughtsFolder(): string {
+        return this.normalizeConfiguredPath(this.settings.thoughtsFolder, '000 Bin/DIWA', 'thoughtsFolder');
+    }
+
+    private getConfiguredPfFolder(): string {
+        return this.normalizeConfiguredPath(this.settings.pfFolder, '000 Bin/DIWA PF', 'pfFolder');
+    }
+
+    private getConfiguredCapturePath(): string {
+        return getCanonicalCapturePath(this.settings);
+    }
+
+    getConfiguredCaptureFolder(): string {
+        return this.normalizeConfiguredPath(this.settings.captureFolder, '000 Bin/Diwa', 'captureFolder');
+    }
+
+    private getTaskMarkdownFilesForFolder(folder: string): TFile[] {
+        return this.app.vault.getMarkdownFiles().filter((file) =>
+            this.pathIsInFolder(file.path, folder)
+            && file.path.toLowerCase().endsWith('.md')
+            && !file.path.toLowerCase().includes('/trash/'),
+        );
+    }
+
+    updateSettings(settings: DiwaSettings) {
+        this.settings = settings;
+    }
+
+    async buildIndices() {
+        await this.rebuildSelectedIndices({
+            captures: true,
+            thoughts: true,
+            tasks: true,
+            dues: true,
+            checklist: true,
+        });
+    }
+
+    async rebuildSelectedIndices(selection: IndexRebuildSelection): Promise<void> {
+        const worker = new IndexService(this.app, this.settings);
+        const normalizedSelection = this.normalizeRebuildSelection(selection);
+        await worker.buildSelectedIndicesInPlace(normalizedSelection);
+        this.applyRebuiltState(worker, normalizedSelection);
+        if (normalizedSelection.tasks || normalizedSelection.dues) {
+            this.rebuildCalculatedState();
+        }
+    }
+
+    private normalizeRebuildSelection(selection: IndexRebuildSelection): Required<IndexRebuildSelection> {
+        return {
+            captures: selection.captures === true,
+            thoughts: selection.thoughts === true,
+            tasks: selection.tasks === true,
+            dues: selection.dues === true,
+            checklist: selection.checklist === true,
+        };
+    }
+
+    private async buildSelectedIndicesInPlace(selection: Required<IndexRebuildSelection>): Promise<void> {
+        await Promise.all([
+            selection.captures ? this.buildCaptureIndexInPlace() : Promise.resolve(),
+            selection.thoughts ? this.buildThoughtIndexInPlace() : Promise.resolve(),
+            selection.tasks ? this.buildTaskIndexInPlace() : Promise.resolve(),
+            selection.dues ? this.buildDueIndexInPlace() : Promise.resolve(),
+            selection.checklist ? this.buildChecklistIndexInPlace() : Promise.resolve(),
+        ]);
+    }
+
+    private applyRebuiltState(source: IndexService, selection: Required<IndexRebuildSelection>): void {
+        if (selection.captures) {
+            this.captureIndex = new Map(source.captureIndex);
+            this._lastIndexedCaptureFolderSetting = source._lastIndexedCaptureFolderSetting;
+        }
+        if (selection.thoughts) {
+            this.thoughtIndex = new Map(source.thoughtIndex);
+            this._thoughtChecklistMap = new Map(
+                Array.from(source._thoughtChecklistMap.entries()).map(([path, items]) => [path, [...items]]),
+            );
+            this._thoughtDoneChecklistMap = new Map(
+                Array.from(source._thoughtDoneChecklistMap.entries()).map(([path, items]) => [path, [...items]]),
+            );
+            this._lastIndexedThoughtsFolderSetting = source._lastIndexedThoughtsFolderSetting;
+        }
+        if (selection.tasks) {
+            this.taskIndex = new Map(source.taskIndex);
+            this._activeTasksFolder = source._activeTasksFolder;
+            this._lastIndexedTasksFolderSetting = source._lastIndexedTasksFolderSetting;
+        }
+        if (selection.dues) {
+            this.dueIndex = new Map(source.dueIndex);
+            this._lastIndexedPfFolderSetting = source._lastIndexedPfFolderSetting;
+        }
+        if (selection.checklist) {
+            this.checklistIndex = [...source.checklistIndex];
+            this._lastIndexedCapturePath = source._lastIndexedCapturePath;
+        }
+    }
+
+    resetAllIndices(): void {
+        this.captureIndex.clear();
+        this.thoughtIndex.clear();
+        this.taskIndex.clear();
+        this.dueIndex.clear();
+        this.checklistIndex = [];
+        this._thoughtChecklistMap.clear();
+        this._thoughtDoneChecklistMap.clear();
+        this.radarQueue = [];
+        this.totalDues = 0;
+    }
+
+    rebuildCalculatedState() {
+        // 1. Radar Queue: Urgent Open + Completed Today
+        const today = moment().startOf('day');
+        this.radarQueue = Array.from(this.taskIndex.values()).filter(t => {
+            const isUrgent = t.status === 'open' && t.due && moment(t.due).isSameOrBefore(today, 'day');
+            const completedToday = t.status === 'done' && moment(t.modified).isSame(today, 'day');
+            return isUrgent || completedToday;
+        }).sort((a, b) => {
+            if (a.status !== b.status) return a.status === 'open' ? -1 : 1;
+            return moment(a.due).valueOf() - moment(b.due).valueOf();
+        }).slice(0, 10);
+
+        // 2. Total Dues
+        let sum = 0;
+        this.dueIndex.forEach(entry => sum += entry.amount || 0);
+        this.totalDues = sum;
+    }
+
+    async buildChecklistIndex(): Promise<void> {
+        await this.rebuildSelectedIndices({ checklist: true });
+    }
+
+    private async buildChecklistIndexInPlace(): Promise<void> {
+        const path = this.getConfiguredCapturePath();
+        this._lastIndexedCapturePath = path;
+        const file = this.app.vault.getAbstractFileByPath(path);
+        
+        this.checklistIndex = [];
+        if (file instanceof TFile) {
+            const content = await this.app.vault.read(file);
+            content.split('\n').forEach(line => {
+                if (line.includes('- [ ]') || line.includes('- [x]')) {
+                    this.checklistIndex.push({
+                        text: line.replace(/- \[[ x]\] /, '').trim(),
+                        done: line.includes('- [x]'),
+                        line: line
+                    });
+                }
+            });
+        }
+    }
+
+
+    async buildDueIndex(): Promise<void> {
+        await this.rebuildSelectedIndices({ dues: true });
+    }
+
+    private async buildDueIndexInPlace(): Promise<void> {
+        const pfFolder = this.getConfiguredPfFolder();
+        this.dueIndex.clear();
+        this._lastIndexedPfFolderSetting = pfFolder;
+        const files = this.app.vault.getMarkdownFiles().filter((file) => this.isDueFile(file.path));
+        for (const file of files) {
+            this.indexDueFile(file, true);
+        }
+    }
+
+    indexDueFile(file: TFile, skipRebuild = false): void {
+        if (!this.isDueFile(file.path)) {
+            this.removeDueFile(file.path, skipRebuild);
+            return;
+        }
+
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache?.frontmatter;
+        const active = fm?.['active_status'];
+        const isActive = active === true || active === 'true' || active === 'True';
+        const dueDate = (fm?.['next_duedate'] ?? '').toString().trim();
+        const lastPayment = (fm?.['last_payment_date'] ?? '').toString().trim();
+        const dueMoment = dueDate ? moment(dueDate, ['YYYY-MM-DD', 'MM/DD/YYYY', 'DD/MM/YYYY'], true) : null;
+        const fmAmount = parseFloat((fm?.['amount'] ?? '').toString().replace(/[^\d.]/g, ''));
+        const legacyAmount = parseFloat(file.basename.match(/[\d.]+/)?.[0] || '0');
+        const amount = !isNaN(fmAmount) && fmAmount > 0 ? fmAmount : (isNaN(legacyAmount) ? 0 : legacyAmount);
+        const category = IndexService.normalizeDueCategory(fm?.['category'] ?? fm?.['context'] ?? fm?.['contexts']) ?? 'Uncategorized';
+
+        this.dueIndex.set(file.path, {
+            title: file.basename,
+            path: file.path,
+            dueDate,
+            lastPayment,
+            dueMoment,
+            hasRecurring: !!dueDate,
+            isActive,
+            amount: isNaN(amount) ? 0 : amount,
+            category,
+        });
+
+        if (!skipRebuild) this.rebuildCalculatedState();
+    }
+
+    removeDueFile(path: string, skipRebuild = false): void {
+        const removed = this.dueIndex.delete(path);
+        if (removed && !skipRebuild) this.rebuildCalculatedState();
+    }
+
+
+    async buildThoughtIndex(): Promise<void> {
+        await this.rebuildSelectedIndices({ thoughts: true });
+    }
+
+    private async buildThoughtIndexInPlace(): Promise<void> {
+        this._lastIndexedThoughtsFolderSetting = this.getConfiguredThoughtsFolder();
+        this.thoughtIndex.clear();
+        this._thoughtChecklistMap.clear();
+        this._thoughtDoneChecklistMap.clear();
+        const files = this.app.vault.getMarkdownFiles().filter(f => this.isThoughtFile(f.path));
+        const CHUNK_SIZE = 50;
+        for (let i = 0; i < files.length; i += CHUNK_SIZE) {
+            const chunk = files.slice(i, i + CHUNK_SIZE);
+            await Promise.all(chunk.map(f => this.indexThoughtFile(f).catch(error => {
+                console.warn('[DIWA IndexService] skipped thought file due indexing error', { path: f.path, error });
+            })));
+        }
+    }
+
+    async buildTaskIndex(): Promise<void> {
+        await this.rebuildSelectedIndices({ tasks: true });
+    }
+
+    private async buildTaskIndexInPlace(): Promise<void> {
+        const configuredFolder = this.getConfiguredTasksFolder();
+        const fallbackFolders = ['000 Bin/GAWA', '000 Bin/DIWA Gawa']
+            .map((folder) => this.normalizeVaultPath(folder))
+            .filter(Boolean)
+            .filter((folder, index, folders) => folders.findIndex((candidate) => candidate.toLowerCase() === folder.toLowerCase()) === index)
+            .filter((folder) => folder.toLowerCase() !== configuredFolder.toLowerCase());
+        const candidateFolders = [configuredFolder, ...fallbackFolders];
+
+        this.taskIndex.clear();
+        this._activeTasksFolder = configuredFolder;
+
+        for (const folder of candidateFolders) {
+            const files = this.getTaskMarkdownFilesForFolder(folder);
+            if (files.length === 0) continue;
+            this.taskIndex.clear();
+
+            // Parallel indexing in chunks of 50
+            const CHUNK_SIZE = 50;
+            for (let i = 0; i < files.length; i += CHUNK_SIZE) {
+                const chunk = files.slice(i, i + CHUNK_SIZE);
+                await Promise.all(chunk.map(f => this.indexTaskFile(f, true).catch(error => {
+                    console.warn('[DIWA IndexService] skipped task file due indexing error', { path: f.path, error });
+                })));
+            }
+
+            if (this.taskIndex.size > 0) {
+                if (folder.toLowerCase() !== configuredFolder.toLowerCase()) {
+                    console.warn('[DIWA IndexService] task folder fallback engaged', {
+                        configuredFolder: this.settings.tasksFolder,
+                        fallbackFolder: folder,
+                        fileCount: files.length,
+                        indexedTaskCount: this.taskIndex.size,
+                    });
+                }
+                this._activeTasksFolder = folder;
+                this._lastIndexedTasksFolderSetting = configuredFolder;
+                return;
+            }
+
+            if (folder.toLowerCase() === configuredFolder.toLowerCase()) {
+                console.warn('[DIWA IndexService] configured task folder contained no indexable task files', {
+                    configuredFolder: this.settings.tasksFolder,
+                    fileCount: files.length,
+                });
+            }
+        }
+
+        this.taskIndex.clear();
+        this._activeTasksFolder = configuredFolder;
+        this._lastIndexedTasksFolderSetting = configuredFolder;
+    }
+
+    async indexThoughtFile(file: TFile) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        // arch-01: Read actual file content for body — was incorrectly set to file.basename
+        const content = await this.app.vault.cachedRead(file);
+        const fallbackFrontmatter = IndexService.parseFrontmatterFallback(content);
+        const cacheFrontmatter = cache?.frontmatter as Record<string, unknown> | undefined;
+        const fm = {
+            ...(fallbackFrontmatter ?? {}),
+            ...(cacheFrontmatter ?? {}),
+        } as Record<string, any>;
+        if (Object.keys(fm).length === 0) return;
+        const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim();
+        const context = IndexService.normalizeContext(fm.context ?? fm.contexts);
+        const tags = IndexService.normalizeStringArray(fm.tags);
+        const journalType = inferJournalType({
+            journalType: fm.journalType,
+            context,
+            tags,
+        });
+        const linkedTaskIds = Array.from(new Set([
+            ...IndexService.normalizeStringArray(fm.linkedTasks),
+            ...IndexService.normalizeLinksArray(fm.links, 'tasks'),
+        ]));
+        const topics = normalizeThoughtTopics(fm.topic);
+        this.thoughtIndex.set(file.path, {
+            id: file.path,
+            filePath: file.path,
+            title: getThoughtDisplayTitle({ title: String(fm.title || '').trim(), body }, file.basename),
+            body: body,
+            content: body,
+            wikilinks: extractWikiLinks(body),
+            day: String(fm.day || '').replace(/^\[\[|\]\]$/g, ''),
+            created: fm.created || '',
+            modified: fm.modified || '',
+            createdAt: Number(fm.createdAt || file.stat.ctime || Date.now()),
+            updatedAt: Number(fm.updatedAt || file.stat.mtime || Date.now()),
+            context,
+            topic: toStoredThoughtTopic(topics),
+            journalType,
+            synthesized: fm.synthesized || false,
+            state: fm.state || 'raw',
+            pinned: Boolean(fm.pinned),
+            archived: Boolean(fm.archived),
+            tags,
+            allDates: fm.allDates || [],
+            lastThreadUpdate: file.stat.mtime,
+            links: {
+                tasks: linkedTaskIds,
+                thoughts: IndexService.normalizeLinksArray(fm.links, 'thoughts'),
+            },
+        });
+
+        // Collect open checklist items from this thought file (replace stale entries via Map)
+        const newCheckItems: ThoughtChecklistItem[] = [];
+        const newDoneItems: ThoughtChecklistItem[] = [];
+        const lines = body.split('\n');
+        const fileModifiedToday = moment(file.stat.mtime).isSame(moment(), 'day');
+        lines.forEach((line, lineIndex) => {
+            if (line.includes('- [ ]')) {
+                newCheckItems.push({
+                    filePath: file.path,
+                    text: line.replace(/^[\s>]*- \[ \] /, '').trim(),
+                    line,
+                    lineIndex
+                });
+            } else if (fileModifiedToday && line.includes('- [x]')) {
+                newDoneItems.push({
+                    filePath: file.path,
+                    text: line.replace(/^[\s>]*- \[x\] /i, '').trim(),
+                    line,
+                    lineIndex
+                });
+            }
+        });
+        this._thoughtChecklistMap.set(file.path, newCheckItems);
+        this._thoughtDoneChecklistMap.set(file.path, newDoneItems);
+    }
+
+    // arch-02: skipRebuild param prevents O(n²) calls during bulk index build
+    async indexTaskFile(file: TFile, skipRebuild = false) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        const content = await this.app.vault.cachedRead(file);
+        const fallbackFrontmatter = IndexService.parseFrontmatterFallback(content);
+        const cacheFrontmatter = cache?.frontmatter as Record<string, unknown> | undefined;
+        const fallbackFm = (fallbackFrontmatter ?? {}) as Record<string, unknown>;
+        const cacheFm = (cacheFrontmatter ?? {}) as Record<string, unknown>;
+        const pickFrontmatter = (keys: string[]): unknown =>
+            IndexService.getFrontmatterValue(fallbackFm, keys)
+            ?? IndexService.getFrontmatterValue(cacheFm, keys);
+        const fm = {
+            ...(fallbackFrontmatter ?? {}),
+            ...(cacheFrontmatter ?? {}),
+        } as Record<string, any>;
+        if (Object.keys(fm).length === 0) {
+            console.warn('[DIWA IndexService] indexTaskFile: no parseable frontmatter, skipping', { path: file.path });
+            return;
+        }
+        const rawTaskBody = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim();
+        const { body, comments } = splitTaskBodyAndCommentSuffix(rawTaskBody);
+        const rawWorkflowStatus = String(pickFrontmatter(['status', 'state']) ?? 'backlog').toLowerCase().trim();
+        const normalizedTaskIdValue = pickFrontmatter(['taskId', 'taskID']);
+        const normalizedTaskId = normalizedTaskIdValue ? String(normalizedTaskIdValue) : undefined;
+        const rawBucketValue = String(pickFrontmatter(['bucket']) ?? fm.bucket ?? '').toLowerCase().trim();
+        const dueValue = pickFrontmatter(['due']) ?? fm.due;
+        const titleValue = pickFrontmatter(['title']) ?? fm.title;
+        const dayValue = pickFrontmatter(['day']) ?? fm.day;
+        const createdValue = pickFrontmatter(['created']) ?? fm.created;
+        const modifiedValue = pickFrontmatter(['modified']) ?? fm.modified;
+        const priorityValue = pickFrontmatter(['priority']) ?? fm.priority;
+        const energyValue = pickFrontmatter(['energy']) ?? fm.energy;
+        const recurrenceValue = pickFrontmatter(['recurrence']) ?? fm.recurrence;
+        const recurrenceParentIdValue = pickFrontmatter(['recurrenceParentId']) ?? fm.recurrenceParentId;
+        const focusValue = pickFrontmatter(['focus']) ?? fm.focus;
+
+        let normalizedStatus: TaskEntry['status'] = 'open';
+        let normalizedLegacyState: TaskEntry['state'] = 'backlog';
+        let normalizedBucketStatus: TaskBucketStatus | undefined = (['backlog', 'active', 'done'].includes(rawBucketValue))
+            ? rawBucketValue as TaskBucketStatus
+            : undefined;
+
+        if (rawWorkflowStatus === 'done') {
+            normalizedStatus = 'done';
+            normalizedLegacyState = 'done';
+            normalizedBucketStatus = normalizedBucketStatus ?? 'done';
+        } else if (rawWorkflowStatus === 'waiting' || rawWorkflowStatus === 'active') {
+            normalizedStatus = 'waiting';
+            normalizedLegacyState = 'active';
+            normalizedBucketStatus = normalizedBucketStatus ?? 'active';
+        } else if (rawWorkflowStatus === 'someday') {
+            normalizedStatus = 'someday';
+            normalizedLegacyState = 'someday';
+            normalizedBucketStatus = normalizedBucketStatus ?? 'backlog';
+        } else if (rawWorkflowStatus === 'open') {
+            normalizedStatus = 'open';
+            normalizedLegacyState = 'open';
+            normalizedBucketStatus = normalizedBucketStatus ?? 'backlog';
+        } else {
+            normalizedStatus = 'open';
+            normalizedLegacyState = 'backlog';
+            normalizedBucketStatus = normalizedBucketStatus ?? 'backlog';
+        }
+
+        const normalizedLifecycleStatus: TaskEntry['lifecycleStatus'] = (['planned', 'active', 'done'].includes(String(fm.lifecycleStatus)))
+            ? fm.lifecycleStatus as 'planned' | 'active' | 'done'
+            : (normalizedBucketStatus === 'done'
+                ? 'done'
+                : (normalizedBucketStatus === 'active' ? 'active' : 'planned'));
+
+        const linkedThoughtIds = Array.from(new Set([
+            ...IndexService.normalizeStringArray(fm.sourceThoughtIds),
+            ...IndexService.normalizeLinksArray(fm.links, 'thoughts'),
+        ]));
+
+        // Guard against a stale disk read clobbering a newer optimistic in-memory update.
+        const existingEntry = this.taskIndex.get(file.path);
+        if (existingEntry && existingEntry.lastUpdate > file.stat.mtime) {
+            if (!skipRebuild) this.rebuildCalculatedState();
+            return;
+        }
+
+        this.taskIndex.set(file.path, {
+            id: normalizedTaskId ?? file.path,
+            filePath: file.path,
+            title: titleValue || file.basename,
+            body: body,
+            status: normalizedStatus,
+            state: normalizedLegacyState,
+            // Normalize due: strip [[...]] wikilink wrapper, handle Date objects from YAML
+            due: dueValue
+                ? (typeof dueValue === 'object'
+                    ? moment(dueValue).format('YYYY-MM-DD')
+                    : String(dueValue).trim().replace(/^\[\[|\]\]$/g, ''))
+                : '',
+            created: createdValue ? String(createdValue) : '',
+            modified: modifiedValue ? String(modifiedValue) : '',
+            lastUpdate: file.stat.mtime,
+            day: String(dayValue || '').replace(/^\[\[|\]\]$/g, ''),
+            context: IndexService.normalizeContext(fm.context ?? fm.contexts),
+            children: comments,
+            priority: priorityValue as TaskEntry['priority'] | undefined,
+            energy: energyValue as TaskEntry['energy'] | undefined,
+            recurrence: recurrenceValue as TaskEntry['recurrence'] | undefined,
+            recurrenceParentId: recurrenceParentIdValue ? String(recurrenceParentIdValue) : undefined,
+            bucketStatus: normalizedBucketStatus,
+            focus: typeof focusValue === 'boolean'
+                ? focusValue
+                : (String(focusValue).toLowerCase() === 'true' ? true : undefined),
+            // Unified task model fields — gracefully absent on legacy tasks
+            taskId: normalizedTaskId,
+            origin: fm.origin === 'thought' ? 'thought' : (fm.origin === 'direct' ? 'direct' : undefined),
+            sourceThoughtIds: linkedThoughtIds,
+            links: { thoughts: linkedThoughtIds },
+            // Lifecycle fields — gracefully absent on legacy tasks
+            lifecycleStatus: normalizedLifecycleStatus,
+            createdAt:   fm.createdAt   ? String(fm.createdAt)   : undefined,
+            updatedAt:   fm.updatedAt   ? String(fm.updatedAt)   : undefined,
+            completedAt: fm.completedAt ? String(fm.completedAt) : undefined,
+            reflectionThoughtId: fm.reflectionThoughtId ? String(fm.reflectionThoughtId) : undefined,
+        });
+        if (!skipRebuild) this.rebuildCalculatedState();
+    }
+
+    removeTaskFile(path: string, skipRebuild = false): boolean {
+        const removed = this.taskIndex.delete(path);
+        if (removed && !skipRebuild) this.rebuildCalculatedState();
+        return removed;
+    }
+
+    isThoughtFile(path: string): boolean {
+        const folder = this.getConfiguredThoughtsFolder();
+        const normalizedPath = this.normalizeVaultPath(path);
+        return this.pathIsInFolder(normalizedPath, folder)
+            && normalizedPath.toLowerCase().endsWith('.md')
+            && !normalizedPath.toLowerCase().includes('/trash/');
+    }
+
+    getEffectiveTasksFolder(): string {
+        return this._activeTasksFolder || this.getConfiguredTasksFolder();
+    }
+
+    isTaskFile(path: string): boolean {
+        const folder = this.getEffectiveTasksFolder();
+        const normalizedPath = this.normalizeVaultPath(path);
+        return this.pathIsInFolder(normalizedPath, folder)
+            && normalizedPath.toLowerCase().endsWith('.md')
+            && !normalizedPath.toLowerCase().includes('/trash/');
+    }
+
+    tasksFolderChanged(): boolean {
+        return this.getConfiguredTasksFolder().toLowerCase() !== this._lastIndexedTasksFolderSetting.toLowerCase();
+    }
+
+    thoughtsFolderChanged(): boolean {
+        return this.getConfiguredThoughtsFolder().toLowerCase() !== this._lastIndexedThoughtsFolderSetting.toLowerCase();
+    }
+
+    isDueFile(path: string): boolean {
+        const folder = this.getConfiguredPfFolder();
+        const normalizedPath = this.normalizeVaultPath(path);
+        return this.pathIsInFolder(normalizedPath, folder)
+            && normalizedPath.toLowerCase().endsWith('.md');
+    }
+
+    dueFolderChanged(): boolean {
+        return this.getConfiguredPfFolder().toLowerCase() !== this._lastIndexedPfFolderSetting.toLowerCase();
+    }
+
+    async buildCaptureIndex(): Promise<void> {
+        await this.rebuildSelectedIndices({ captures: true });
+    }
+
+    private async buildCaptureIndexInPlace(): Promise<void> {
+        this._lastIndexedCaptureFolderSetting = this.getConfiguredCaptureFolder();
+        this.captureIndex.clear();
+        const files = this.app.vault.getMarkdownFiles().filter(f => this.isCaptureFile(f.path));
+        // Parallel indexing in chunks of 50 for max speed
+        const CHUNK_SIZE = 50;
+        for (let i = 0; i < files.length; i += CHUNK_SIZE) {
+            const chunk = files.slice(i, i + CHUNK_SIZE);
+            await Promise.all(chunk.map(f => this.indexCaptureFile(f, true).catch(err => {
+                console.warn('[DIWA IndexService] skipped capture file due to indexing error', { path: f.path, err });
+                return null;
+            })));
+        }
+    }
+
+    async indexCaptureFile(file: TFile, skipRebuild = false): Promise<CaptureEntry | null> {
+        if (!this.isCaptureFile(file.path)) {
+            this.removeCaptureFile(file.path);
+            return null;
+        }
+
+        const existing = this.captureIndex.get(file.path);
+        if (existing && (existing as any)._mtime && file.stat.mtime <= (existing as any)._mtime) {
+            return existing;
+        }
+
+        const content = await this.app.vault.cachedRead(file);
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fallbackFm = IndexService.parseFrontmatterFallback(content);
+        const fm = (cache?.frontmatter as Record<string, unknown> | undefined) ?? fallbackFm ?? {};
+
+        const createdStr = String(fm.created || '');
+        const modifiedStr = String(fm.modified || '');
+        let createdAtMs = createdStr ? moment(createdStr).valueOf() : file.stat.ctime;
+        if (isNaN(createdAtMs) || createdAtMs === 0) {
+            createdAtMs = file.stat.ctime || file.stat.mtime;
+        }
+
+        const area = String(fm.area || '').toLowerCase();
+        const tags = IndexService.normalizeContext(fm.tags ?? fm.tag);
+
+        // Parse body (strip frontmatter)
+        const body = content.replace(/^---[\s\S]*?---\r?\n*/, '').trim();
+
+        // Parse tasks
+        const tasks: CaptureTaskItem[] = [];
+        const lines = content.split('\n');
+        const taskRegex = /^(\s*-\s*\[)([ xX])(\]\s+.*)$/;
+        for (let i = 0; i < lines.length; i++) {
+            const match = lines[i].match(taskRegex);
+            if (match) {
+                const isDone = match[2].toLowerCase() === 'x';
+                const taskTitle = match[3].replace(/^\]\s+/, '').trim();
+                tasks.push({
+                    lineIndex: i,
+                    rawLine: lines[i],
+                    title: taskTitle,
+                    completed: isDone,
+                });
+            }
+        }
+
+        const hasTasks = tasks.length > 0 || String(fm.hasTasks).toLowerCase() === 'true';
+        const wikilinks = extractWikiLinks(body);
+        const dateMatches = body.match(/\[\[\d{4}-\d{2}-\d{2}\]\]/g) || [];
+        const allDates = dateMatches.map(d => d.replace(/\[\[|\]\]/g, ''));
+
+        const entry: CaptureEntry = {
+            id: file.path,
+            filePath: file.path,
+            created: createdStr || moment(createdAtMs).format('YYYY-MM-DDTHH:mm:ss'),
+            modified: modifiedStr || moment(file.stat.mtime).format('YYYY-MM-DDTHH:mm:ss'),
+            createdAtMs,
+            area,
+            tags,
+            body,
+            hasTasks,
+            tasks,
+            allDates,
+            wikilinks,
+        };
+        (entry as any)._mtime = file.stat.mtime;
+
+        this.captureIndex.set(file.path, entry);
+        return entry;
+    }
+
+    removeCaptureFile(path: string): boolean {
+        return this.captureIndex.delete(path);
+    }
+
+    isCaptureFile(path: string): boolean {
+        const folder = this.getConfiguredCaptureFolder();
+        const normalizedPath = this.normalizeVaultPath(path);
+        return this.pathIsInFolder(normalizedPath, folder)
+            && normalizedPath.toLowerCase().endsWith('.md')
+            && !normalizedPath.toLowerCase().includes('/trash/');
+    }
+
+    captureFolderChanged(): boolean {
+        return this.getConfiguredCaptureFolder().toLowerCase() !== this._lastIndexedCaptureFolderSetting.toLowerCase();
+    }
+
+    captureLocationChanged(): boolean {
+        return this.getConfiguredCapturePath().toLowerCase() !== this._lastIndexedCapturePath.toLowerCase();
+    }
+
+    getAllCaptures(): CaptureEntry[] {
+        return Array.from(this.captureIndex.values()).sort((a, b) => b.createdAtMs - a.createdAtMs);
+    }
+
+    getOpenTaskCount(): number {
+        let count = 0;
+        for (const entry of this.captureIndex.values()) {
+            const tasks = Array.isArray(entry?.tasks) ? entry.tasks : [];
+            for (const t of tasks) {
+                if (t && !t.completed) count++;
+            }
+        }
+        return count;
+    }
+
+    getUntaggedCount(): number {
+        let count = 0;
+        for (const entry of this.captureIndex.values()) {
+            if (!entry) continue;
+            const area = String(entry.area || '').trim();
+            const tags = Array.isArray(entry.tags) ? entry.tags : [];
+            if (!area && tags.length === 0) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    getAreaCounts(): Record<string, number> {
+        const counts: Record<string, number> = {};
+        for (const entry of this.captureIndex.values()) {
+            if (!entry) continue;
+            const area = String(entry.area || '').toLowerCase().trim();
+            if (area) {
+                counts[area] = (counts[area] || 0) + 1;
+            }
+            const tags = Array.isArray(entry.tags) ? entry.tags : [];
+            for (const tag of tags) {
+                const normTag = String(tag || '').toLowerCase().trim();
+                if (normTag && normTag !== area) {
+                    counts[normTag] = (counts[normTag] || 0) + 1;
+                }
+            }
+        }
+        return counts;
+    }
+
+    getTodayDateStr(): string {
+        return moment().format('YYYY-MM-DD');
+    }
+
+    isDateToday(dateStr: string): boolean {
+        if (!dateStr || typeof dateStr !== 'string') return false;
+        return dateStr.trim() === this.getTodayDateStr();
+    }
+
+    isDatePast(dateStr: string): boolean {
+        if (!dateStr || typeof dateStr !== 'string') return false;
+        const target = moment(dateStr.trim(), 'YYYY-MM-DD', true);
+        if (!target.isValid()) return false;
+        return target.isBefore(moment().startOf('day'));
+    }
+
+    isDateFuture(dateStr: string): boolean {
+        if (!dateStr || typeof dateStr !== 'string') return false;
+        const target = moment(dateStr.trim(), 'YYYY-MM-DD', true);
+        if (!target.isValid()) return false;
+        return target.isAfter(moment().endOf('day'));
+    }
+
+    getTodayCapturesCount(): number {
+        const todayStr = this.getTodayDateStr();
+        let count = 0;
+        for (const entry of this.captureIndex.values()) {
+            const dates = Array.isArray(entry?.allDates) ? entry.allDates : [];
+            if (dates.includes(todayStr)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    getUpcomingCapturesCount(): number {
+        let count = 0;
+        for (const entry of this.captureIndex.values()) {
+            const dates = Array.isArray(entry?.allDates) ? entry.allDates : [];
+            if (dates.some(d => this.isDateFuture(d))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    getEarliestFutureDate(entry: CaptureEntry): string | null {
+        const dates = Array.isArray(entry?.allDates) ? entry.allDates : [];
+        if (dates.length === 0) return null;
+        const futureDates = dates.filter(d => this.isDateFuture(d)).sort();
+        return futureDates.length > 0 ? futureDates[0] : null;
+    }
+
+    async scanForContexts(): Promise<string[]> {
+        const c = new Set<string>();
+        this.thoughtIndex.forEach(t => t.context.forEach((x: string) => c.add(x)));
+        this.taskIndex.forEach(t => t.context.forEach((x: string) => c.add(x)));
+        return Array.from(c);
+    }
+}
