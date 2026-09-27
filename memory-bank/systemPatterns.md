@@ -85,3 +85,7 @@ The primary interactive hub operates in two complementary psychological states:
 4.  **Temporal Scrubber**:
     *   Fast filters: `📖 All Journal`, `📅 Today`, `✨ On This Day`, `❤️ Keepsakes`, `🌧️ Unburdening`.
     *   Theme-adaptive WCAG AA contrast tokens for light and dark themes.
+5.  **Phone Capture Dock**:
+    *   `Platform.isMobile && !isTablet(app)` sets `is-phone-layout` on the journal container; phone CSS follows this state rather than treating exactly 768px as a phone.
+    *   The persistent bottom composer keeps its draft textarea mounted, places Record beside the input, and places mood choices and private-entry control in a scrollable secondary row. Search hides the composer and filters as before.
+    *   Header Search and Privacy Shield remain direct controls; an Obsidian `Menu` houses Sanctuary, Recall, Select, and Settings on phones. Desktop/tablet retain the top composer and direct header actions.

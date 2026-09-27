@@ -10,6 +10,7 @@ The user has clarified that Handumanan is **primarily a journal plugin, not a Pe
 
 ## Implemented journal direction
 - `DesktopHubView` keeps the active composer separate from stream refreshes and renders a responsive journal stream.
+- The phone view now uses a compact two-row capture dock: writing and Record above horizontally scrollable mood options and the private-entry toggle. Search and Privacy Shield stay in the header; Sanctuary, Recall, Select, and Settings live in an Obsidian More menu. The phone-only layout class keeps 768px tablets on tablet styling.
 - `CaptureService` creates Markdown entries and persists drafts; `IndexService` supports filtering and excludes private/unburdening entries from resurfacing.
 - Sanctuary mode, Privacy Shield, prompts, mood check-ins, keepsakes, search, and non-destructive weaving support reflective writing.
 
@@ -19,3 +20,4 @@ The user has clarified that Handumanan is **primarily a journal plugin, not a Pe
 - The stream now uses bounded 25-entry pages. Indexing rejects stale asynchronous reads and runs uncached startup reads at bounded concurrency; Recall remains user-initiated and excludes private/unburdening entries.
 - Vitest service tests cover conflicts, metadata preservation, index races, privacy exclusions, and synthetic 10k-entry metadata indexing. Actual Obsidian desktop/mobile interaction, theme, sync, and scroll performance are not yet measured; historical deployment notes are not revalidated here.
 - On 2026-09-27, the production build and 14 service tests passed, and `main.js`, `manifest.json`, and `styles.css` were deployed to the user-confirmed local Obsidian vault. Installed asset hashes matched the build outputs; the existing plugin `data.json` hash was unchanged. Obsidian reload and hands-on behavior remain unverified.
+- On 2026-09-27, the compact phone layout was rebuilt and deployed to the user-approved `K0000` vault. The installed `main.js`, `manifest.json`, and `styles.css` hashes matched the worktree outputs, and `data.json` was unchanged. Obsidian reload and hands-on phone/tablet keyboard, theme, narrow-pane, and touch behavior remain unverified.

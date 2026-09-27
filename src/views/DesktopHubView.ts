@@ -231,6 +231,7 @@ export class DesktopHubView extends ItemView {
         this._containerEl.toggleClass('is-sanctuary-mode', this._isSanctuaryMode);
 
         const isMobile = Platform.isMobile && !isTablet(this.app);
+        this._containerEl.toggleClass('is-phone-layout', isMobile);
 
         // Build static layout shell once
         if (!this._composerEl) {
@@ -343,30 +344,19 @@ export class DesktopHubView extends ItemView {
             this.togglePrivacyShield();
         };
 
-        // Sanctuary Mode toggle
-        const sanctuaryBtn = actions.createEl('button', {
-            cls: `pos-header-text-btn pos-sanctuary-btn ${this._isSanctuaryMode ? 'is-active' : ''}`,
-            text: this._isSanctuaryMode ? '✦ Sanctuary' : 'Sanctuary',
-            attr: { 'aria-label': 'Toggle Sanctuary Mode (Focused Deep Reflection)' }
-        });
-        sanctuaryBtn.onclick = () => {
+        const toggleSanctuary = () => {
             this._isSanctuaryMode = !this._isSanctuaryMode;
             this._containerEl?.toggleClass('is-sanctuary-mode', this._isSanctuaryMode);
             this.renderHeaderBar(header);
             if (this._isSanctuaryMode) {
                 this._composerTextarea?.focus();
             } else {
-                header.querySelector<HTMLButtonElement>('.pos-sanctuary-btn')?.focus({ preventScroll: true });
+                header.querySelector<HTMLButtonElement>(isMobile ? '.pos-more-toggle' : '.pos-sanctuary-btn')?.focus({ preventScroll: true });
             }
         };
 
         // Recall is user-initiated; selection remains in IndexService.
-        const resurfaceBtn = actions.createEl('button', {
-            cls: 'pos-header-text-btn pos-resurface-btn',
-            attr: { 'aria-label': 'Recall a reflection now (excludes private and unburdening entries)', title: 'May revisit On This Day, keepsakes, or older reflections. Private and unburdening entries are excluded.' }
-        });
-        resurfaceBtn.setText('✦ Recall');
-        resurfaceBtn.onclick = () => {
+        const recallReflection = () => {
             const memory = this.plugin.index.getRandomMemory();
             if (!memory || memory.private || memory.type === 'unburdening' || memory.tags?.includes('unburdening')) {
                 new Notice('No reflections eligible for recall yet. Private and unburdening entries stay out of recall.');
@@ -386,12 +376,7 @@ export class DesktopHubView extends ItemView {
         };
 
         // Select & Weave Mode toggle
-        const selectBtn = actions.createEl('button', {
-            cls: `pos-header-text-btn ${this._selectionMode ? 'is-active' : ''}`,
-            text: this._selectionMode ? 'Done' : 'Select',
-            attr: { 'aria-label': this._selectionMode ? 'Exit selection mode' : 'Select entries to weave together' }
-        });
-        selectBtn.onclick = () => {
+        const toggleSelection = () => {
             this._selectionMode = !this._selectionMode;
             if (!this._selectionMode) {
                 this._selectedEntryIds.clear();
@@ -399,7 +384,31 @@ export class DesktopHubView extends ItemView {
             if (this._headerBarEl) this.renderHeaderBar(this._headerBarEl);
             this.updateSelectionBar();
             this.updateStreamOnly();
+            header.querySelector<HTMLButtonElement>(isMobile ? '.pos-more-toggle' : '.pos-select-btn')?.focus({ preventScroll: true });
         };
+
+        if (!isMobile) {
+            const sanctuaryBtn = actions.createEl('button', {
+                cls: `pos-header-text-btn pos-sanctuary-btn ${this._isSanctuaryMode ? 'is-active' : ''}`,
+                text: this._isSanctuaryMode ? '✦ Sanctuary' : 'Sanctuary',
+                attr: { 'aria-label': 'Toggle Sanctuary Mode (Focused Deep Reflection)' }
+            });
+            sanctuaryBtn.onclick = toggleSanctuary;
+
+            const resurfaceBtn = actions.createEl('button', {
+                cls: 'pos-header-text-btn pos-resurface-btn',
+                text: '✦ Recall',
+                attr: { 'aria-label': 'Recall a reflection now (excludes private and unburdening entries)', title: 'May revisit On This Day, keepsakes, or older reflections. Private and unburdening entries are excluded.' }
+            });
+            resurfaceBtn.onclick = recallReflection;
+
+            const selectBtn = actions.createEl('button', {
+                cls: `pos-header-text-btn pos-select-btn ${this._selectionMode ? 'is-active' : ''}`,
+                text: this._selectionMode ? 'Done' : 'Select',
+                attr: { 'aria-label': this._selectionMode ? 'Exit selection mode' : 'Select entries to weave together' }
+            });
+            selectBtn.onclick = toggleSelection;
+        }
 
         // Mobile Search Toggle
         if (isMobile) {
@@ -426,16 +435,37 @@ export class DesktopHubView extends ItemView {
             };
         }
 
-        // Settings trigger
-        const settingsBtn = actions.createEl('button', {
-            cls: 'pos-icon-btn pos-settings-trigger',
-            attr: { 'aria-label': 'Settings' }
-        });
-        setIcon(settingsBtn, 'settings');
-        settingsBtn.onclick = () => {
+        const openSettings = () => {
             (this.app as any).setting?.open();
             (this.app as any).setting?.openTabById?.(this.plugin.manifest.id);
         };
+        if (isMobile) {
+            const moreBtn = actions.createEl('button', {
+                cls: 'pos-icon-btn pos-more-toggle',
+                attr: { type: 'button', 'aria-label': 'More journal actions', 'aria-haspopup': 'menu' }
+            });
+            setIcon(moreBtn, 'ellipsis');
+            moreBtn.onclick = () => {
+                const menu = new Menu();
+                menu.addItem(item => item.setTitle(this._isSanctuaryMode ? 'Exit Sanctuary' : 'Enter Sanctuary')
+                    .setIcon('sparkles').onClick(toggleSanctuary));
+                menu.addItem(item => item.setTitle('Recall a reflection')
+                    .setIcon('history').onClick(recallReflection));
+                menu.addItem(item => item.setTitle(this._selectionMode ? 'Done selecting' : 'Select entries')
+                    .setIcon('list-checks').onClick(toggleSelection));
+                menu.addSeparator();
+                menu.addItem(item => item.setTitle('Settings').setIcon('settings').onClick(openSettings));
+                const bounds = moreBtn.getBoundingClientRect();
+                menu.showAtPosition({ x: bounds.right, y: bounds.bottom });
+            };
+        } else {
+            const settingsBtn = actions.createEl('button', {
+                cls: 'pos-icon-btn pos-settings-trigger',
+                attr: { 'aria-label': 'Settings' }
+            });
+            setIcon(settingsBtn, 'settings');
+            settingsBtn.onclick = openSettings;
+        }
     }
 
     private renderFilterBar(parent: HTMLElement): void {
@@ -511,7 +541,8 @@ export class DesktopHubView extends ItemView {
         const placeholderPrompt = getCircadianPrompt();
 
         // Textarea row
-        const inputRow = composer.createDiv({ cls: 'pos-composer-input-row' });
+        const mainRow = isMobile ? composer.createDiv({ cls: 'pos-mobile-composer-main-row' }) : composer;
+        const inputRow = mainRow.createDiv({ cls: isMobile ? 'pos-composer-input-row pos-composer-input-pill' : 'pos-composer-input-row' });
         const textarea = inputRow.createEl('textarea', {
             cls: 'pos-composer-textarea',
             placeholder: placeholderPrompt,
@@ -537,7 +568,7 @@ export class DesktopHubView extends ItemView {
         attachMediaPasteHandler(this.app, textarea, () => this.plugin.settings?.attachmentsFolder || '000 Bin/Handumanan Attachments');
 
         // Actions & Mood Beads row
-        const bottomRow = composer.createDiv({ cls: 'pos-composer-bottom-row' });
+        const bottomRow = composer.createDiv({ cls: isMobile ? 'pos-composer-bottom-row pos-mobile-composer-pills-row' : 'pos-composer-bottom-row' });
 
         // Mood beads with accessibility
         const moodBeads = bottomRow.createDiv({ cls: 'pos-mood-beads-container' });
@@ -552,7 +583,12 @@ export class DesktopHubView extends ItemView {
         const updateSubmitBtnLabel = () => {
             if (!this._composerSubmitBtn) return;
             const hasText = Boolean(textarea.value.trim());
-            if (!hasText && this._selectedMood) {
+            if (isMobile) {
+                this._composerSubmitBtn.setText('↑');
+                this._composerSubmitBtn.setAttribute('aria-label', !hasText && this._selectedMood
+                    ? `Log ${this._selectedMood} mood`
+                    : 'Record journal entry');
+            } else if (!hasText && this._selectedMood) {
                 // Pebble-Drop micro-entry label
                 this._composerSubmitBtn.setText(`✦ Log ${this._selectedMood}`);
             } else {
@@ -561,12 +597,11 @@ export class DesktopHubView extends ItemView {
         };
 
         moods.forEach(m => {
-            const bead = moodBeads.createSpan({
+            const bead = moodBeads.createEl('button', {
                 cls: `pos-mood-bead ${this._selectedMood === m.id ? 'is-selected' : ''}`,
                 text: m.label,
                 attr: {
-                    role: 'button',
-                    tabindex: '0',
+                    type: 'button',
                     'aria-pressed': String(this._selectedMood === m.id)
                 }
             });
@@ -585,19 +620,13 @@ export class DesktopHubView extends ItemView {
             };
 
             bead.onclick = toggleMood;
-            bead.onkeydown = (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    toggleMood();
-                }
-            };
         });
 
         // Right side controls
-        const controls = bottomRow.createDiv({ cls: 'pos-composer-controls' });
+        const controls = (isMobile ? mainRow : bottomRow).createDiv({ cls: 'pos-composer-controls' });
 
         // Privacy lock button
-        const lockBtn = controls.createEl('button', {
+        const lockBtn = (isMobile ? bottomRow : controls).createEl('button', {
             cls: `pos-icon-btn pos-composer-privacy-btn ${this._isEntryPrivate ? 'is-active' : ''}`,
             attr: { 'aria-label': this._isEntryPrivate ? 'Entry private (excluded from recall)' : 'Mark entry private (excluded from recall)', 'aria-pressed': String(this._isEntryPrivate) }
         });
@@ -612,11 +641,12 @@ export class DesktopHubView extends ItemView {
 
         // Submit button
         const submitBtn = controls.createEl('button', {
-            cls: 'pos-composer-submit-btn',
+            cls: `pos-composer-submit-btn ${isMobile ? 'pos-composer-send-btn-circle' : ''}`,
             text: isMobile ? '↑' : '✦ Record',
-            attr: { 'aria-label': 'Record Journal Entry (⌘ Enter)' }
+            attr: { 'aria-label': isMobile ? 'Record journal entry' : 'Record Journal Entry (⌘ Enter)' }
         });
         this._composerSubmitBtn = submitBtn;
+        updateSubmitBtnLabel();
 
         const executeSubmit = async () => {
             const content = textarea.value.trim();
@@ -640,7 +670,10 @@ export class DesktopHubView extends ItemView {
                 this.plugin.capture.clearDraft();
                 this._selectedMood = '';
                 this._isEntryPrivate = false;
-                moodBeads.querySelectorAll('.pos-mood-bead').forEach(el => el.classList.remove('is-selected'));
+                moodBeads.querySelectorAll('.pos-mood-bead').forEach(el => {
+                    el.classList.remove('is-selected');
+                    el.setAttribute('aria-pressed', 'false');
+                });
                 setIcon(lockBtn, 'unlock');
                 lockBtn.removeClass('is-active');
                 lockBtn.setAttribute('aria-pressed', 'false');

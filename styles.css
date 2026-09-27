@@ -1075,7 +1075,7 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
 
 /* ── Responsive Mobile & Tablet Rules ── */
 @media (max-width: 768px) {
-    .pos-scratchpad-container {
+    .pos-scratchpad-container.is-phone-layout {
         padding: 8px 10px 140px 10px;
         gap: 10px;
         max-width: 100vw;
@@ -1105,32 +1105,32 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
         justify-content: flex-start !important;
     }
 
-    .pos-scratchpad-container.is-searching {
+    .pos-scratchpad-container.is-phone-layout.is-searching {
         padding-top: 6px !important;
         padding-bottom: 24px !important;
         gap: 6px !important;
     }
 
-    .pos-scratchpad-container.is-searching .pos-empty-state {
+    .pos-scratchpad-container.is-phone-layout.is-searching .pos-empty-state {
         padding: 24px 16px;
         gap: 6px;
         justify-content: flex-start;
     }
 
-    .pos-scratchpad-container.is-searching .pos-empty-icon {
+    .pos-scratchpad-container.is-phone-layout.is-searching .pos-empty-icon {
         font-size: 1.8em;
     }
 
-    .pos-scratchpad-container.is-searching .pos-empty-title {
+    .pos-scratchpad-container.is-phone-layout.is-searching .pos-empty-title {
         font-size: 1.05em;
         font-weight: 600;
     }
 
-    .pos-scratchpad-container.is-searching .pos-empty-subtitle {
+    .pos-scratchpad-container.is-phone-layout.is-searching .pos-empty-subtitle {
         font-size: 0.85em;
     }
 
-    .pos-header-bar {
+    .is-phone-layout .pos-header-bar {
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -1140,17 +1140,17 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
         box-sizing: border-box;
     }
 
-    .pos-header-title-section {
+    .is-phone-layout .pos-header-title-section {
         flex-shrink: 0;
     }
 
-    .pos-header-actions {
+    .is-phone-layout .pos-header-actions {
         display: flex;
         align-items: center;
         gap: 6px;
     }
 
-    .pos-search-container {
+    .is-phone-layout .pos-search-container {
         max-width: 100%;
         order: 10;
         flex-basis: 100%;
@@ -1163,7 +1163,7 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
         box-sizing: border-box;
     }
 
-    .pos-search-input {
+    .is-phone-layout .pos-search-input {
         width: 100%;
         min-height: 42px;
         height: 42px;
@@ -1179,13 +1179,13 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
         box-sizing: border-box;
     }
 
-    .pos-search-input::placeholder {
+    .is-phone-layout .pos-search-input::placeholder {
         color: var(--text-muted);
         opacity: 0.85;
         font-size: 15px;
     }
 
-    .pos-search-clear {
+    .is-phone-layout .pos-search-clear {
         position: absolute;
         right: 12px;
         top: 50%;
@@ -1197,12 +1197,12 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
         z-index: 5;
     }
 
-    .pos-icon-btn.is-active {
+    .is-phone-layout .pos-icon-btn.is-active {
         background: var(--interactive-accent);
         color: var(--text-on-accent);
     }
 
-    .pos-filter-carousel {
+    .is-phone-layout .pos-filter-carousel {
         width: 100%;
         max-width: 100%;
         margin: 0;
@@ -1233,9 +1233,9 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
     }
 }
 
-/* Tablet Optimizations (769px to 1024px) */
-@media (min-width: 769px) and (max-width: 1024px) {
-    .pos-scratchpad-container {
+/* Tablet Optimizations (768px to 1024px) */
+@media (min-width: 768px) and (max-width: 1024px) {
+    .pos-scratchpad-container:not(.is-phone-layout) {
         padding: 20px 16px 80px 16px;
     }
 
@@ -1785,34 +1785,170 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
 }
 
 @media (max-width: 768px) {
-    .pos-journal-container .pos-journal-leaf {
+    .pos-journal-container.is-phone-layout .pos-journal-leaf {
         padding: 14px;
     }
 
-    .pos-journal-header .pos-header-actions {
+    .is-phone-layout .pos-journal-header .pos-header-actions {
         flex: 1;
         min-width: 0;
         flex-wrap: wrap;
         justify-content: flex-end;
     }
 
-    .pos-journal-container .pos-leaf-actions {
+    .pos-journal-container.is-phone-layout .pos-leaf-actions {
         opacity: 1;
     }
 
-    .pos-journal-container .pos-leaf-actions .pos-icon-btn,
-    .pos-journal-container .pos-search-clear {
+    .pos-journal-container.is-phone-layout .pos-leaf-actions .pos-icon-btn,
+    .pos-journal-container.is-phone-layout .pos-search-clear {
         min-width: 36px;
         min-height: 36px;
     }
 
-    .pos-journal-container .pos-stream-empty-state {
+    .pos-journal-container.is-phone-layout .pos-stream-empty-state {
         padding: 28px 12px;
     }
 
-    .pos-journal-container .pos-recall-banner {
+    .pos-journal-container.is-phone-layout .pos-recall-banner {
         align-items: flex-start;
     }
+}
+
+.pos-scratchpad-container.is-phone-layout {
+    padding: 8px 10px 140px;
+    gap: 10px;
+}
+
+.pos-scratchpad-container.is-phone-layout.is-searching {
+    padding-bottom: 24px;
+    gap: 6px;
+}
+
+.diwa-workspace-root.has-mobile-keyboard {
+    height: calc(100% - var(--diwa-kb-h, 0px)) !important;
+    max-height: calc(100% - var(--diwa-kb-h, 0px)) !important;
+    overflow-y: auto !important;
+}
+
+.diwa-workspace-root.has-mobile-keyboard .pos-scratchpad-container.is-phone-layout {
+    padding-bottom: 16px;
+}
+
+.pos-journal-container.is-phone-layout .pos-header-bar {
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.pos-journal-container.is-phone-layout .pos-header-subtitle {
+    display: none;
+}
+
+.pos-journal-container.is-phone-layout .pos-header-logo {
+    font-size: 1.12em;
+}
+
+.pos-journal-container.is-phone-layout .pos-header-actions {
+    gap: 2px;
+    flex-wrap: nowrap;
+}
+
+.pos-journal-container.is-phone-layout .pos-mobile-search-toggle {
+    order: -1;
+}
+
+.pos-journal-container.is-phone-layout :is(.pos-header-actions .pos-icon-btn, .pos-search-clear, .pos-filter-chip, .pos-leaf-actions .pos-icon-btn) {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.pos-journal-container.is-phone-layout .pos-search-container {
+    order: 10;
+    flex: 0 0 100%;
+    max-width: none;
+    min-width: 0;
+}
+
+.pos-journal-container.is-phone-layout .pos-search-input {
+    min-height: 44px;
+    font-size: 16px;
+    padding-right: 64px;
+}
+
+.pos-journal-container.is-phone-layout .pos-filter-bar,
+.pos-journal-container.is-phone-layout .pos-filter-carousel {
+    min-height: 44px;
+}
+
+.pos-journal-container.is-phone-layout .pos-mobile-sticky-composer {
+    padding: 8px 10px;
+    gap: 4px;
+    border-radius: 16px;
+}
+
+.pos-journal-container.is-phone-layout .pos-mobile-composer-main-row {
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.pos-journal-container.is-phone-layout .pos-composer-input-pill {
+    min-height: 44px;
+}
+
+.pos-journal-container.is-phone-layout .pos-composer-textarea {
+    min-height: 30px;
+    max-height: min(30vh, 140px);
+    font-size: 16px;
+}
+
+.pos-journal-container.is-phone-layout .pos-composer-controls {
+    margin: 0;
+}
+
+.pos-journal-container.is-phone-layout .pos-composer-send-btn-circle {
+    min-width: 44px;
+    min-height: 44px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+}
+
+.pos-journal-container.is-phone-layout .pos-mobile-composer-pills-row {
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    padding: 0;
+    border: 0;
+    overflow: visible;
+}
+
+.pos-journal-container.is-phone-layout .pos-mood-beads-container {
+    flex: 1;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.pos-journal-container.is-phone-layout .pos-mood-beads-container::-webkit-scrollbar {
+    display: none;
+}
+
+.pos-journal-container.is-phone-layout .pos-mood-bead {
+    min-height: 44px;
+    flex-shrink: 0;
+    padding: 6px 12px;
+}
+
+.pos-journal-container.is-phone-layout .pos-composer-privacy-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.pos-journal-container.is-phone-layout .pos-mobile-composer-main-row:focus-within .pos-composer-input-pill {
+    outline: 2px solid var(--interactive-accent) !important;
+    outline-offset: -2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
