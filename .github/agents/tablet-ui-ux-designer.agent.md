@@ -113,7 +113,7 @@ Quality control checklist before submitting your review:
 - ✓ Have you tested both portrait and landscape orientations?
 - ✓ Are touch target measurements specific and accurate?
 - ✓ Have you referenced iOS HIG or Material Design guidelines for each recommendation?
-- ✓ Are your recommendations actionable and specific (not vague)?  
+- ✓ Are your recommendations actionable and specific (not vague)?
 - ✓ Have you prioritized issues correctly (critical vs important vs nice-to-have)?
 - ✓ Did you consider one-handed use, landscape multitasking, and stylus interactions?
 - ✓ Did you flag any decisions that need design council discussion?
@@ -144,14 +144,6 @@ Work collaboratively as a design council member:
 
 ---
 
-## DIWA-Specific Tablet Context
+## Handumanan tablet context
 
-DIWA uses a custom `isTablet()` utility (`window.innerWidth >= 768`) to detect tablet layout within Obsidian Mobile. This is distinct from `Platform.isMobile` (which returns true for both phones and tablets).
-
-Tablet-specific patterns in DIWA:
-- Two-column layout in the main view is enabled when `isTablet()` returns true
-- Navigation footer adapts to wider spacing and larger tap targets on tablet
-- The ZenCaptureModal uses a centered card layout (not bottom-sheet) on tablet
-- Cards (`TasksTab`, `TimelineTab`) display additional metadata columns on wider screens
-
-When auditing tablet changes, verify `isTablet()` is the correct boundary condition — not `Platform.isDesktop` (which is false on all mobile devices).
+Tablet uses the responsive journal in `DesktopHubView`, with journal-specific styling in `styles.css`. Verify composer/stream balance in portrait and landscape, touch access, and keyboard transitions. Do not assume DIWA tasks, sidebars, navigation footer, or a separate tablet dashboard exists.

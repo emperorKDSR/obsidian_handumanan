@@ -38,9 +38,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: MINA V2 ${{ github.ref_name }}
+          name: Handumanan Journal ${{ github.ref_name }}
           body: |
-            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for release notes.
+            Handumanan is a local-first Obsidian journal. See the README for current features.
           files: |
             main.js
             manifest.json

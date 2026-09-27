@@ -3,7 +3,7 @@
   "name": "Handumanan",
   "version": "1.0.0",
   "minAppVersion": "1.4.0",
-  "description": "An intimate, distraction-free Life Journaling Operating System for deep reflection and memories.",
+  "description": "A local-first journal for capturing reflections and revisiting memories in Obsidian.",
   "author": "K",
   "authorUrl": "https://github.com/emperorKDSR",
   "isDesktopOnly": false

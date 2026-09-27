@@ -1,11 +1,19 @@
-import { App, TFile, moment, normalizePath } from 'obsidian';
+import { App, TFile, moment, normalizePath, parseYaml } from 'obsidian';
 import { HandumananSettings, JournalEntry, JournalType } from '../types';
+
+export class JournalEditConflictError extends Error {
+    constructor() {
+        super('This reflection changed elsewhere. Copy your edits, reload the entry, and try again.');
+        this.name = 'JournalEditConflictError';
+    }
+}
 
 export class CaptureService {
     private app: App;
     private settings: HandumananSettings;
     private static DRAFT_KEY = 'handumanan-journal-draft';
     private draftDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    private fileMutations = new Map<string, Promise<void>>();
 
     constructor(app: App, settings: HandumananSettings) {
         this.app = app;
@@ -128,64 +136,102 @@ export class CaptureService {
         });
     }
 
-    /**
-     * Updates an existing journal entry atomically using Obsidian's processFrontMatter.
-     */
-    async updateNoteContent(filePath: string, newBody: string, area?: string, tags?: string[]): Promise<void> {
-        const file = this.app.vault.getAbstractFileByPath(filePath);
-        if (!(file instanceof TFile)) {
-            throw new Error(`File not found: ${filePath}`);
+    private async withFileMutation<T>(filePath: string, mutation: () => Promise<T>): Promise<T> {
+        const previous = this.fileMutations.get(filePath) ?? Promise.resolve();
+        const pending = previous.then(mutation);
+        const settled = pending.then(() => undefined, () => undefined);
+        this.fileMutations.set(filePath, settled);
+        try {
+            return await pending;
+        } finally {
+            if (this.fileMutations.get(filePath) === settled) this.fileMutations.delete(filePath);
         }
+    }
 
-        const nowIso = moment().format('YYYY-MM-DDTHH:mm:ss');
+    private setFrontmatterField(header: string, key: string, value: string, nl: string): string {
+        const line = new RegExp(`^${key}:[^\\r\\n]*`, 'm');
+        if (line.test(header)) return header.replace(line, `${key}: ${value}`);
+        return `${header}${header ? nl : ''}${key}: ${value}`;
+    }
 
-        // Safe atomic frontmatter update via official API
-        await this.app.fileManager.processFrontMatter(file, (fm) => {
-            fm.modified = nowIso;
-            if (!fm.created) fm.created = nowIso;
-            if (!fm.type) fm.type = 'journal';
-            if (tags && tags.length > 0) {
-                const cleanTags = tags.map(t => t.toLowerCase().replace(/^#/, ''));
-                const existing = Array.isArray(fm.tags) ? fm.tags : [];
-                fm.tags = Array.from(new Set([...existing, ...cleanTags]));
-            }
+    private setFrontmatterTags(header: string, tags: string[], nl: string): string {
+        const value = `tags: ${JSON.stringify(tags)}`;
+        const lines = header.split(/\r?\n/);
+        const start = lines.findIndex(line => /^tags:/.test(line));
+        if (start < 0) return `${header}${header ? nl : ''}${value}`;
+        let end = start + 1;
+        while (end < lines.length && (!lines[end].trim() || /^[ \t]/.test(lines[end]))) end++;
+        lines.splice(start, end - start, value);
+        return lines.join(nl);
+    }
+
+    async updateNoteContent(
+        filePath: string,
+        newBody: string,
+        area?: string,
+        tags?: string[],
+        expectedBody?: string,
+    ): Promise<void> {
+        await this.withFileMutation(filePath, async () => {
+            const file = this.app.vault.getAbstractFileByPath(filePath);
+            if (!(file instanceof TFile)) throw new Error(`File not found: ${filePath}`);
+
+            const nowIso = moment().format('YYYY-MM-DDTHH:mm:ss');
+            await this.app.vault.process(file, (raw) => {
+                const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+                const currentBody = (fmMatch ? raw.slice(fmMatch[0].length) : raw).trim();
+                if (expectedBody !== undefined && currentBody !== expectedBody.trim()) {
+                    throw new JournalEditConflictError();
+                }
+
+                const nl = raw.includes('\r\n') ? '\r\n' : '\n';
+                let header = fmMatch ? fmMatch[1] : '';
+                const parsed = header ? parseYaml(header) ?? {} : {};
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    throw new Error(`Invalid journal frontmatter: ${filePath}`);
+                }
+                header = this.setFrontmatterField(header, 'modified', nowIso, nl);
+                if (!parsed.created) header = this.setFrontmatterField(header, 'created', nowIso, nl);
+                if (!parsed.type) header = this.setFrontmatterField(header, 'type', 'journal', nl);
+                if (tags?.length) {
+                    const existing = Array.isArray(parsed.tags) ? parsed.tags.map(String) : [];
+                    const merged = Array.from(new Set([
+                        ...existing,
+                        ...tags.map(tag => tag.toLowerCase().replace(/^#/, '')),
+                    ]));
+                    header = this.setFrontmatterTags(header, merged, nl);
+                }
+                return `---${nl}${header}${nl}---${nl}${nl}${newBody.trim()}${nl}`;
+            });
         });
-
-        // Safely splice new body while preserving frontmatter header
-        const raw = await this.app.vault.read(file);
-        const fmMatch = raw.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
-        const frontmatterHeader = fmMatch ? fmMatch[0] : '';
-        const isCrlf = raw.includes('\r\n');
-        const nl = isCrlf ? '\r\n' : '\n';
-        const finalContent = `${frontmatterHeader.trim()}${nl}${nl}${newBody.trim()}${nl}`;
-        await this.app.vault.modify(file, finalContent);
     }
 
     /**
      * Toggles favorite (keepsake / star) on an entry using processFrontMatter.
      */
     async toggleFavorite(filePath: string): Promise<boolean> {
-        const file = this.app.vault.getAbstractFileByPath(filePath);
-        if (!(file instanceof TFile)) return false;
-
-        let isNowFavorite = false;
-        await this.app.fileManager.processFrontMatter(file, (fm) => {
-            isNowFavorite = !Boolean(fm.favorite);
-            fm.favorite = isNowFavorite;
-            fm.modified = moment().format('YYYY-MM-DDTHH:mm:ss');
+        return this.withFileMutation(filePath, async () => {
+            const file = this.app.vault.getAbstractFileByPath(filePath);
+            if (!(file instanceof TFile)) throw new Error(`File not found: ${filePath}`);
+            let isNowFavorite = false;
+            await this.app.fileManager.processFrontMatter(file, (fm) => {
+                isNowFavorite = !Boolean(fm.favorite);
+                fm.favorite = isNowFavorite;
+                fm.modified = moment().format('YYYY-MM-DDTHH:mm:ss');
+            });
+            return isNowFavorite;
         });
-
-        return isNowFavorite;
     }
 
     /**
      * Sends a note safely to trash using Obsidian native trash
      */
     async deleteNote(filePath: string): Promise<void> {
-        const file = this.app.vault.getAbstractFileByPath(filePath);
-        if (file instanceof TFile) {
+        await this.withFileMutation(filePath, async () => {
+            const file = this.app.vault.getAbstractFileByPath(filePath);
+            if (!(file instanceof TFile)) throw new Error(`File not found: ${filePath}`);
             await this.app.vault.trash(file, true);
-        }
+        });
     }
 
     /**
@@ -224,11 +270,10 @@ export class CaptureService {
         if (targetFilePath) {
             const targetFile = this.app.vault.getAbstractFileByPath(targetFilePath);
             if (targetFile instanceof TFile) {
-                await this.app.vault.process(targetFile, (existing) => {
-                    const isCrlf = existing.includes('\r\n');
-                    const newline = isCrlf ? '\r\n' : '\n';
+                await this.withFileMutation(targetFilePath, () => this.app.vault.process(targetFile, (existing) => {
+                    const newline = existing.includes('\r\n') ? '\r\n' : '\n';
                     return `${existing.trim()}${newline}${newline}---${newline}${newline}${mergedBody}${provenanceBlock}`;
-                });
+                }));
                 destinationFile = targetFile;
             } else {
                 throw new Error(`Target file not found: ${targetFilePath}`);
@@ -246,16 +291,16 @@ export class CaptureService {
             if (file.path !== destinationFile.path) {
                 if (trashSourceFiles) {
                     try {
-                        await this.app.vault.trash(file, true);
+                        await this.withFileMutation(file.path, () => this.app.vault.trash(file, true));
                     } catch (e) {
                         console.warn('[CaptureService] Could not trash file:', file.path);
                     }
                 } else {
                     try {
-                        await this.app.fileManager.processFrontMatter(file, (fm) => {
+                        await this.withFileMutation(file.path, () => this.app.fileManager.processFrontMatter(file, (fm) => {
                             fm.synthesized = true;
                             fm.wovenInto = `[[${destinationFile.basename}]]`;
-                        });
+                        }));
                     } catch (e) {
                         console.warn('[CaptureService] Could not update source provenance:', file.path);
                     }

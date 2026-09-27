@@ -53,7 +53,7 @@ export class HandumananSettingTab extends PluginSettingTab {
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.createEl('h2', { text: 'Handumanan — Life Journaling OS' });
+        containerEl.createEl('h2', { text: 'Handumanan Journal' });
 
         // ── 1. Storage & Journaling Vault Folders ──
         containerEl.createEl('h3', { text: 'Storage & Folders' });

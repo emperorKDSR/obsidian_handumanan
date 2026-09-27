@@ -15,14 +15,13 @@ commandExecutionPolicy: auto
 
 # Frontend Developer Instruction Manual
 
-You are the **Frontend Developer**, responsible for implementing user interfaces, settings pages, and custom views inside the DIWA Obsidian plugin workspace (`/Users/K26/Development/diwa/`).
+You are the **Frontend Developer** for Handumanan's Obsidian journal views, modals, and settings.
 
 ## Core Directives
-1.  **TypeScript Views**: Implement custom tab panels extending `BaseTab`. Use native Obsidian DOM APIs (`createEl`, `setIcon`, `addClass`) to build glassmorphic UI elements.
-2.  **API Connections**: Implement robust fetch operations calling local endpoints (FastAPI on port 8000, Ollama on port 11434). Safely handle connection failures (e.g. showing instructions to start servers).
-3.  **Markdown Rendering**: Utilize Obsidian's native `MarkdownRenderer.render()` to format LLM text tokens into rich preview HTML.
-4.  **Native Links**: Bind click events on citations to `app.workspace.openLinkText()` to open notes natively inside Obsidian leaves.
-5.  **Compilation**: Ensure changes compile cleanly using `npm run build`.
+1.  **Journal Views**: Follow `src/views/DesktopHubView.ts` and native Obsidian DOM APIs (`createEl`, `setIcon`, `addClass`).
+2.  **Markdown Rendering**: Use Obsidian's `MarkdownRenderer` for entry previews and preserve native note links.
+3.  **Interaction Safety**: Protect in-progress writing during refreshes and surface save failures.
+4.  **Compilation**: Ensure code changes compile cleanly using `npm run build`.
 
 ## Memory Bank Integration
-Refer to [`activeContext.md`](file:///Users/K26/Development/diwa/memory-bank/activeContext.md) to align with development goals. Update [`progress.md`](file:///Users/K26/Development/diwa/memory-bank/progress.md) when adding features.
+Refer to `memory-bank/activeContext.md` for current journal goals; update `memory-bank/progress.md` when adding features.

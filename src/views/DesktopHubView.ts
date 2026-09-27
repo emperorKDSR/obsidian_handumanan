@@ -7,6 +7,7 @@ import {
 } from '../constants';
 import { JournalEntry, JournalFilterMode, JournalType } from '../types';
 import { MergeNotesModal } from '../modals/MergeNotesModal';
+import { JournalEditConflictError } from '../services/CaptureService';
 import { isTablet, attachInlineTriggers, attachMediaPasteHandler } from '../utils';
 import { attachMobileSheetViewportBehavior } from '../utils/mobileSheetViewport';
 
@@ -64,6 +65,7 @@ export class DesktopHubView extends ItemView {
     private _selectedEntryIds: Set<string> = new Set();
     private _selectionMode: boolean = false;
     private _editingEntryId: string | null = null;
+    private _recalledEntryId: string | null = null;
     private _mobileSearchOpen: boolean = false;
     private _viewportCleanup: (() => void) | null = null;
 
@@ -75,11 +77,8 @@ export class DesktopHubView extends ItemView {
     _capturePending: number = 0;
     _taskPending: number = 0;
 
-    // Progressive rendering, component lifecycle & LRU caching
-    private _renderedCount: number = BATCH_SIZE;
-    private _scrollSentinelEl: HTMLElement | null = null;
-    private _intersectionObserver: IntersectionObserver | null = null;
-    private _isLoadingMore: boolean = false;
+    // Bounded stream pagination, component lifecycle & LRU caching
+    private _pageStart: number = 0;
     private _renderedMarkdownCache: Map<string, HTMLElement> = new Map();
     private _streamComponent: Component | null = null;
     private _lastRenderedDay: string = '';
@@ -166,10 +165,6 @@ export class DesktopHubView extends ItemView {
             this._streamComponent = null;
         }
 
-        if (this._intersectionObserver) {
-            this._intersectionObserver.disconnect();
-            this._intersectionObserver = null;
-        }
         if (this._searchDebounceTimer) {
             clearTimeout(this._searchDebounceTimer);
             this._searchDebounceTimer = null;
@@ -188,14 +183,29 @@ export class DesktopHubView extends ItemView {
     refreshAll(): void {
         // Protect active typing: only refresh filter counts and stream
         if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
-        if (this._streamContainerEl) this.updateStreamOnly();
+        if (this._streamContainerEl && !this._editingEntryId) this.updateStreamOnly();
     }
 
     togglePrivacyShield(): void {
+        const restoreHeaderFocus = Boolean(this._headerBarEl?.contains(document.activeElement));
         this._isPrivacyShieldActive = !this._isPrivacyShieldActive;
         this._containerEl?.toggleClass('is-privacy-shield-active', this._isPrivacyShieldActive);
+        this._containerEl?.querySelectorAll<HTMLElement>('.pos-journal-leaf').forEach(leaf => {
+            const body = leaf.querySelector<HTMLElement>('.pos-leaf-body');
+            const reveal = leaf.querySelector<HTMLButtonElement>('.pos-leaf-reveal-btn');
+            body?.removeClass('is-unblurred');
+            if (body) body.inert = this._isPrivacyShieldActive;
+            if (reveal) {
+                reveal.setAttribute('aria-pressed', 'false');
+                reveal.setAttribute('aria-label', 'Reveal this reflection');
+                setIcon(reveal, 'eye');
+            }
+        });
         if (this._headerBarEl) {
             this.renderHeaderBar(this._headerBarEl);
+            if (restoreHeaderFocus) {
+                this._headerBarEl.querySelector<HTMLButtonElement>('.pos-privacy-toggle')?.focus({ preventScroll: true });
+            }
         }
         new Notice(this._isPrivacyShieldActive ? 'Privacy Shield active (Reflections blurred)' : 'Privacy Shield deactivated');
     }
@@ -214,7 +224,7 @@ export class DesktopHubView extends ItemView {
     renderView(resetPagination = true): void {
         if (!this._containerEl) return;
         if (resetPagination) {
-            this._renderedCount = BATCH_SIZE;
+            this._pageStart = 0;
         }
 
         this._containerEl.toggleClass('is-privacy-shield-active', this._isPrivacyShieldActive);
@@ -291,29 +301,34 @@ export class DesktopHubView extends ItemView {
 
             searchInput.oninput = (e) => {
                 const val = (e.target as HTMLInputElement).value;
+                clearBtn.disabled = !val && !isMobile;
                 if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
                 this._searchDebounceTimer = setTimeout(() => {
                     this._searchQuery = val;
-                    this._renderedCount = BATCH_SIZE;
+                    this._recalledEntryId = null;
+                    this._pageStart = 0;
                     this.updateStreamOnly();
                 }, 120);
             };
 
-            if (this._searchQuery || isMobile) {
-                const clearBtn = searchContainer.createSpan({
-                    cls: 'pos-search-clear',
-                    text: '✕',
-                    attr: { 'aria-label': 'Clear search' }
-                });
-                clearBtn.onclick = () => {
-                    this._searchQuery = '';
-                    if (isMobile) this._mobileSearchOpen = false;
-                    this._renderedCount = BATCH_SIZE;
-                    this.renderHeaderBar(header);
-                    this.updateStreamOnly();
-                    this.updateComposerVisibility();
-                };
-            }
+            const clearBtn = searchContainer.createEl('button', {
+                cls: 'pos-search-clear',
+                text: '✕',
+                attr: { type: 'button', 'aria-label': isMobile ? 'Clear search and close search' : 'Clear search' }
+            });
+            clearBtn.disabled = !this._searchQuery && !isMobile;
+            clearBtn.onclick = () => {
+                if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
+                this._searchDebounceTimer = null;
+                this._searchQuery = '';
+                this._recalledEntryId = null;
+                if (isMobile) this._mobileSearchOpen = false;
+                this._pageStart = 0;
+                this.renderHeaderBar(header);
+                this.updateStreamOnly();
+                this.updateComposerVisibility();
+                if (!isMobile) header.querySelector<HTMLInputElement>('.pos-search-input')?.focus();
+            };
         }
 
         const actions = header.createDiv({ cls: 'pos-header-actions' });
@@ -340,26 +355,34 @@ export class DesktopHubView extends ItemView {
             this.renderHeaderBar(header);
             if (this._isSanctuaryMode) {
                 this._composerTextarea?.focus();
+            } else {
+                header.querySelector<HTMLButtonElement>('.pos-sanctuary-btn')?.focus({ preventScroll: true });
             }
         };
 
-        // Resurface / Serendipity memory recall (safely excludes unburdening/private)
+        // Recall is user-initiated; selection remains in IndexService.
         const resurfaceBtn = actions.createEl('button', {
-            cls: 'pos-icon-btn pos-resurface-btn',
-            attr: { 'aria-label': 'Resurface a gentle memory' }
+            cls: 'pos-header-text-btn pos-resurface-btn',
+            attr: { 'aria-label': 'Recall a reflection now (excludes private and unburdening entries)', title: 'May revisit On This Day, keepsakes, or older reflections. Private and unburdening entries are excluded.' }
         });
-        setIcon(resurfaceBtn, 'sparkles');
+        resurfaceBtn.setText('✦ Recall');
         resurfaceBtn.onclick = () => {
             const memory = this.plugin.index.getRandomMemory();
-            if (!memory) {
-                new Notice('No memories ready to resurface.');
+            if (!memory || memory.private || memory.type === 'unburdening' || memory.tags?.includes('unburdening')) {
+                new Notice('No reflections eligible for recall yet. Private and unburdening entries stay out of recall.');
                 return;
             }
-            new Notice(`Resurfaced memory from ${moment(memory.createdAtMs).format('MMMM D, YYYY')}`);
-            this._searchQuery = memory.title;
-            this._renderedCount = BATCH_SIZE;
+            if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
+            this._searchDebounceTimer = null;
+            this._searchQuery = '';
+            this._activeFilter = 'all';
+            this._recalledEntryId = memory.id;
+            this._pageStart = 0;
             this.renderHeaderBar(header);
+            if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
             this.updateStreamOnly();
+            this.updateComposerVisibility();
+            this._streamContainerEl?.querySelector<HTMLButtonElement>('.pos-recall-banner button')?.focus({ preventScroll: true });
         };
 
         // Select & Weave Mode toggle
@@ -390,10 +413,16 @@ export class DesktopHubView extends ItemView {
                 if (!this._mobileSearchOpen) {
                     this._searchQuery = '';
                 }
-                this._renderedCount = BATCH_SIZE;
+                this._recalledEntryId = null;
+                this._pageStart = 0;
                 this.renderHeaderBar(header);
                 this.updateComposerVisibility();
                 this.updateStreamOnly();
+                if (this._mobileSearchOpen) {
+                    header.querySelector<HTMLInputElement>('.pos-search-input')?.focus();
+                } else {
+                    header.querySelector<HTMLButtonElement>('.pos-mobile-search-toggle')?.focus({ preventScroll: true });
+                }
             };
         }
 
@@ -431,9 +460,7 @@ export class DesktopHubView extends ItemView {
         }
 
         // 4. Keepsakes / Favorites
-        if (favoritesCount > 0) {
-            this.createFilterChip(scrollable, 'favorites', '❤️ Keepsakes', favoritesCount);
-        }
+        this.createFilterChip(scrollable, 'favorites', '❤️ Keepsakes', favoritesCount);
 
         // 5. Unburdening
         const unburdeningCount = allEntries.filter(e => e.type === 'unburdening' || (e.tags && e.tags.includes('unburdening'))).length;
@@ -448,24 +475,29 @@ export class DesktopHubView extends ItemView {
             attr: {
                 role: 'button',
                 tabindex: '0',
+                'data-filter': filterId,
                 'aria-pressed': String(this._activeFilter === filterId)
             }
         });
         chip.createSpan({ cls: 'pos-chip-label', text: label });
         chip.createSpan({ cls: 'pos-chip-badge', text: `${count}` });
 
-        const toggleFilter = () => {
+        const toggleFilter = (restoreFocus = false) => {
             this._activeFilter = this._activeFilter === filterId ? 'all' : filterId;
-            this._renderedCount = BATCH_SIZE;
+            this._recalledEntryId = null;
+            this._pageStart = 0;
             this.renderFilterBar(this._filterBarEl!);
             this.updateStreamOnly();
+            if (restoreFocus) {
+                this._filterBarEl?.querySelector<HTMLElement>(`.pos-filter-chip[data-filter="${filterId}"]`)?.focus();
+            }
         };
 
-        chip.onclick = toggleFilter;
+        chip.onclick = () => toggleFilter();
         chip.onkeydown = (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                toggleFilter();
+                toggleFilter(true);
             }
         };
 
@@ -567,13 +599,15 @@ export class DesktopHubView extends ItemView {
         // Privacy lock button
         const lockBtn = controls.createEl('button', {
             cls: `pos-icon-btn pos-composer-privacy-btn ${this._isEntryPrivate ? 'is-active' : ''}`,
-            attr: { 'aria-label': this._isEntryPrivate ? 'Marked Private' : 'Mark entry private' }
+            attr: { 'aria-label': this._isEntryPrivate ? 'Entry private (excluded from recall)' : 'Mark entry private (excluded from recall)', 'aria-pressed': String(this._isEntryPrivate) }
         });
         setIcon(lockBtn, this._isEntryPrivate ? 'lock' : 'unlock');
         lockBtn.onclick = () => {
             this._isEntryPrivate = !this._isEntryPrivate;
             setIcon(lockBtn, this._isEntryPrivate ? 'lock' : 'unlock');
             lockBtn.toggleClass('is-active', this._isEntryPrivate);
+            lockBtn.setAttribute('aria-pressed', String(this._isEntryPrivate));
+            lockBtn.setAttribute('aria-label', this._isEntryPrivate ? 'Entry private (excluded from recall)' : 'Mark entry private (excluded from recall)');
         };
 
         // Submit button
@@ -609,6 +643,8 @@ export class DesktopHubView extends ItemView {
                 moodBeads.querySelectorAll('.pos-mood-bead').forEach(el => el.classList.remove('is-selected'));
                 setIcon(lockBtn, 'unlock');
                 lockBtn.removeClass('is-active');
+                lockBtn.setAttribute('aria-pressed', 'false');
+                lockBtn.setAttribute('aria-label', 'Mark entry private (excluded from recall)');
                 updateSubmitBtnLabel();
                 new Notice(content ? 'Reflection recorded' : `Logged moment of ${mood}`);
                 this.refreshAll();
@@ -688,6 +724,10 @@ export class DesktopHubView extends ItemView {
     private getFilteredCaptures(): JournalEntry[] {
         let entries = this.plugin.index.getAllCaptures();
 
+        if (this._recalledEntryId) {
+            return entries.filter(e => e.id === this._recalledEntryId && !e.private && e.type !== 'unburdening' && !e.tags?.includes('unburdening'));
+        }
+
         // Search query takes precedence
         if (this._searchQuery.trim()) {
             const q = this._searchQuery.toLowerCase().trim();
@@ -718,7 +758,18 @@ export class DesktopHubView extends ItemView {
     /**
      * Fresh render of the document stream.
      */
-    private renderStream(container: HTMLElement): void {
+    private renderStream(container: HTMLElement, preservePosition = true): void {
+        const firstVisible = Array.from(container.querySelectorAll<HTMLElement>('.pos-journal-leaf'))
+            .find(leaf => leaf.getBoundingClientRect().bottom > this.contentEl.getBoundingClientRect().top);
+        const anchorId = preservePosition ? firstVisible?.dataset.id : undefined;
+        const anchorTop = firstVisible?.getBoundingClientRect().top;
+        const focused = document.activeElement as HTMLElement;
+        const focusedLeaf = container.contains(focused) ? focused.closest<HTMLElement>('.pos-journal-leaf') : null;
+        const focusedAction = ['pos-heart-btn', 'pos-edit-btn', 'pos-trash-btn', 'pos-leaf-reveal-btn']
+            .find(cls => focused.classList.contains(cls));
+        const focusedPageButton = container.contains(focused) && focused.classList.contains('pos-stream-page-btn')
+            ? focused.textContent : null;
+        const focusedPageStatus = container.contains(focused) && focused.classList.contains('pos-stream-page-status');
         container.empty();
         this._lastRenderedDay = '';
 
@@ -732,22 +783,65 @@ export class DesktopHubView extends ItemView {
 
         const filtered = this.getFilteredCaptures();
 
+        if (this._recalledEntryId) {
+            const recall = container.createDiv({ cls: 'pos-recall-banner' });
+            recall.createSpan({ text: filtered.length
+                ? 'A reflection to revisit · Recall runs only when you choose it. It may surface On This Day, a keepsake, or an older entry; private and unburdening entries stay out.'
+                : 'This reflection is no longer available for recall.' });
+            const showAll = recall.createEl('button', { cls: 'pos-action-btn', text: 'Back to journal' });
+            showAll.onclick = () => {
+                this._recalledEntryId = null;
+                this.updateStreamOnly();
+            };
+        }
+
         if (filtered.length === 0) {
+            this._pageStart = 0;
             const emptyEl = container.createDiv({ cls: 'pos-stream-empty-state' });
             emptyEl.createDiv({ cls: 'pos-empty-icon', text: '🌱' });
-            emptyEl.createEl('h3', { text: this._searchQuery ? 'No reflections found' : 'Your sanctuary is peaceful' });
-            emptyEl.createEl('p', { text: this._searchQuery ? `No thoughts matched "${this._searchQuery}"` : 'Take a quiet breath and record what is alive in you.' });
+            const firstEntry = !this._searchQuery && !this._recalledEntryId && this.plugin.index.getAllCaptures().length === 0;
+            emptyEl.createEl('h3', { text: firstEntry ? 'Begin with one reflection' : this._searchQuery ? 'No reflections found' : 'Your sanctuary is peaceful' });
+            emptyEl.createEl('p', { text: firstEntry ? 'Write a thought above, or choose a mood to capture a moment. Your unfinished writing stays as a local draft; use Ctrl/⌘ + Enter to record it.' : this._searchQuery ? `No thoughts matched "${this._searchQuery}"` : this._activeFilter === 'favorites' ? 'Mark a reflection with the heart to keep it here. Keepsakes do not override recall privacy exclusions.' : 'Take a quiet breath and record what is alive in you.' });
+            if (firstEntry) emptyEl.createEl('p', { text: 'Use the lock to mark an entry private. Private and unburdening entries are never chosen by Recall.' });
             return;
         }
 
-        const initialBatch = filtered.slice(0, this._renderedCount);
-        this.appendBatch(container, initialBatch);
-        this.setupInfiniteScroll(container, filtered.length);
+        this._pageStart = Math.min(this._pageStart, Math.floor((filtered.length - 1) / BATCH_SIZE) * BATCH_SIZE);
+        const pageEnd = Math.min(filtered.length, this._pageStart + BATCH_SIZE);
+        const pageLabel = `Reflections ${this._pageStart + 1}–${pageEnd} of ${filtered.length}`;
+        const header = container.createDiv({ cls: 'pos-stream-page-nav' });
+        const pageStatus = header.createSpan({ cls: 'pos-stream-page-status', text: pageLabel, attr: { tabindex: '-1' } });
+        if (this._pageStart > 0) this.createPageButton(header, 'Newer reflections', this._pageStart - BATCH_SIZE);
+        this.appendBatch(container, filtered.slice(this._pageStart, pageEnd));
+        if (pageEnd < filtered.length) {
+            const footer = container.createDiv({ cls: 'pos-stream-page-nav pos-stream-page-footer' });
+            footer.createSpan({ cls: 'pos-stream-page-status', text: pageLabel });
+            this.createPageButton(footer, 'Older reflections', pageEnd);
+        }
+
+        if (anchorId !== undefined && anchorTop !== undefined) {
+            const anchor = Array.from(container.querySelectorAll<HTMLElement>('.pos-journal-leaf'))
+                .find(leaf => leaf.dataset.id === anchorId);
+            if (anchor) this.contentEl.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+        }
+        if (focusedLeaf && focusedAction) {
+            const replacement = Array.from(container.querySelectorAll<HTMLElement>('.pos-journal-leaf'))
+                .find(leaf => leaf.dataset.id === focusedLeaf.dataset.id);
+            replacement?.querySelector<HTMLElement>(`.${focusedAction}`)?.focus({ preventScroll: true });
+        }
+        if (preservePosition && (focusedPageButton || focusedPageStatus)) {
+            const replacement = Array.from(container.querySelectorAll<HTMLButtonElement>('.pos-stream-page-btn'))
+                .find(button => button.textContent === focusedPageButton);
+            (replacement ?? pageStatus).focus({ preventScroll: true });
+        }
+        if (!preservePosition) {
+            pageStatus.focus({ preventScroll: true });
+            pageStatus.scrollIntoView({ block: 'start' });
+        }
     }
 
     /**
-     * Appends a batch of entries to the stream without destroying existing DOM nodes.
-     * Guarantees 60fps scrolling at 10,000+ notes.
+     * Renders only the entries on the current page.
      */
     private appendBatch(container: HTMLElement, entries: JournalEntry[]): void {
         for (const entry of entries) {
@@ -775,6 +869,14 @@ export class DesktopHubView extends ItemView {
         }
 
         divider.createSpan({ cls: 'pos-day-label', text: displayLabel });
+    }
+
+    private createPageButton(parent: HTMLElement, label: string, start: number): void {
+        const button = parent.createEl('button', { cls: 'pos-action-btn pos-stream-page-btn', text: label });
+        button.onclick = () => {
+            this._pageStart = start;
+            if (this._streamContainerEl) this.renderStream(this._streamContainerEl, false);
+        };
     }
 
     private renderJournalLeaf(container: HTMLElement, entry: JournalEntry): void {
@@ -820,15 +922,24 @@ export class DesktopHubView extends ItemView {
 
         const heartBtn = leafActions.createEl('button', {
             cls: `pos-icon-btn pos-heart-btn ${entry.favorite ? 'is-active' : ''}`,
-            attr: { 'aria-label': entry.favorite ? 'Remove Keepsake' : 'Mark as Keepsake' }
+            attr: { 'aria-label': entry.favorite ? 'Remove Keepsake' : 'Mark as Keepsake', 'aria-pressed': String(Boolean(entry.favorite)), title: 'Keepsakes are for your own browsing; private and unburdening entries remain excluded from recall' }
         });
         setIcon(heartBtn, 'heart');
         heartBtn.onclick = async (e) => {
             e.stopPropagation();
-            const isFav = await this.plugin.capture.toggleFavorite(entry.filePath);
-            entry.favorite = isFav;
-            heartBtn.toggleClass('is-active', isFav);
-            this.renderFilterBar(this._filterBarEl!);
+            heartBtn.disabled = true;
+            try {
+                const isFav = await this.plugin.capture.toggleFavorite(entry.filePath);
+                entry.favorite = isFav;
+                heartBtn.toggleClass('is-active', isFav);
+                heartBtn.setAttribute('aria-pressed', String(isFav));
+                if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
+            } catch (err) {
+                console.error('[Handumanan] Could not change keepsake', err);
+                new Notice('Could not update this keepsake. Please retry.');
+            } finally {
+                heartBtn.disabled = false;
+            }
         };
 
         const editBtn = leafActions.createEl('button', {
@@ -850,18 +961,33 @@ export class DesktopHubView extends ItemView {
             e.stopPropagation();
             const confirmed = window.confirm('Move this reflection to trash?');
             if (!confirmed) return;
-            await this.plugin.capture.deleteNote(entry.filePath);
-            leaf.remove();
-            new Notice('Reflection moved to trash');
+            trashBtn.disabled = true;
+            try {
+                await this.plugin.capture.deleteNote(entry.filePath);
+                leaf.remove();
+                new Notice('Reflection moved to trash');
+            } catch (err) {
+                console.error('[Handumanan] Could not trash reflection', err);
+                new Notice('Could not move this reflection to trash. Please retry.');
+            } finally {
+                trashBtn.disabled = false;
+            }
         };
 
-        // Rendered Body (with safe click-to-reveal toggle)
+        // Explicit per-entry reveal leaves Markdown links and selection untouched.
+        const revealBtn = leafActions.createEl('button', {
+            cls: 'pos-icon-btn pos-leaf-reveal-btn',
+            attr: { 'aria-label': 'Reveal this reflection', 'aria-pressed': 'false', title: 'Reveal this reflection while Privacy Shield is on' }
+        });
+        setIcon(revealBtn, 'eye');
         const bodyEl = leaf.createDiv({ cls: 'pos-leaf-body' });
-        bodyEl.onclick = (e) => {
-            if (this._isPrivacyShieldActive) {
-                e.stopPropagation();
-                bodyEl.classList.toggle('is-unblurred');
-            }
+        bodyEl.inert = this._isPrivacyShieldActive;
+        revealBtn.onclick = () => {
+            const revealed = bodyEl.classList.toggle('is-unblurred');
+            bodyEl.inert = this._isPrivacyShieldActive && !revealed;
+            revealBtn.setAttribute('aria-pressed', String(revealed));
+            revealBtn.setAttribute('aria-label', revealed ? 'Hide this reflection' : 'Reveal this reflection');
+            setIcon(revealBtn, revealed ? 'eye-off' : 'eye');
         };
 
         // Leaf Footer: Word count, People, Themes
@@ -874,35 +1000,67 @@ export class DesktopHubView extends ItemView {
         }
 
         // Lazy body loading & Markdown rendering
+        const renderComponent = this._streamComponent;
         void (async () => {
-            const bodyText = await this.plugin.index.ensureEntryBodyLoaded(entry);
-            const cacheKey = `${entry.filePath}_${entry.modified}`;
-            const cachedEl = this.getCachedRenderedBody(cacheKey);
+            try {
+                const bodyText = await this.plugin.index.ensureEntryBodyLoaded(entry);
+                if (!bodyEl.isConnected || renderComponent !== this._streamComponent) return;
+                const cacheKey = `${entry.filePath}_${entry.modified}`;
+                const cachedEl = this.getCachedRenderedBody(cacheKey);
 
-            if (cachedEl) {
-                bodyEl.empty();
-                bodyEl.appendChild(cachedEl);
-            } else if (this._streamComponent) {
-                const tempDiv = document.createElement('div');
-                await MarkdownRenderer.render(this.app, bodyText, tempDiv, entry.filePath, this._streamComponent);
-                this.setCachedRenderedBody(cacheKey, tempDiv);
-                bodyEl.empty();
-                bodyEl.appendChild(tempDiv);
+                if (cachedEl) {
+                    bodyEl.empty();
+                    bodyEl.appendChild(cachedEl);
+                } else if (renderComponent) {
+                    const tempDiv = document.createElement('div');
+                    await MarkdownRenderer.render(this.app, bodyText, tempDiv, entry.filePath, renderComponent);
+                    if (!bodyEl.isConnected || renderComponent !== this._streamComponent) return;
+                    this.setCachedRenderedBody(cacheKey, tempDiv);
+                    bodyEl.empty();
+                    bodyEl.appendChild(tempDiv);
+                }
+
+                wordInfo.setText(`${entry.wordCount || bodyText.trim().split(/\s+/).length} words · ${entry.readingTimeMin || 1} min reflection`);
+            } catch (err) {
+                console.error('[Handumanan] Could not render reflection', entry.filePath, err);
+                if (bodyEl.isConnected) bodyEl.setText('Could not display this reflection. Open the Markdown file to read it.');
             }
-
-            // Update word count in footer
-            wordInfo.setText(`${entry.wordCount || bodyText.trim().split(/\s+/).length} words · ${entry.readingTimeMin || 1} min reflection`);
         })();
     }
 
-    private renderInlineEditor(leaf: HTMLElement, entry: JournalEntry): void {
+    private async renderInlineEditor(leaf: HTMLElement, entry: JournalEntry): Promise<void> {
+        if (this._editingEntryId) return;
+        this._editingEntryId = entry.id;
+        let originalBody: string;
+        try {
+            if (!entry.body) await this.plugin.index.ensureEntryBodyLoaded(entry);
+            const file = this.app.vault.getAbstractFileByPath(entry.filePath);
+            if (!(file instanceof TFile)) throw new Error(`Reflection not found: ${entry.filePath}`);
+            const raw = await this.app.vault.read(file);
+            const frontmatter = raw.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+            originalBody = (frontmatter ? raw.slice(frontmatter[0].length) : raw).trim();
+            if (!leaf.isConnected || this._editingEntryId !== entry.id) {
+                if (this._editingEntryId === entry.id) this._editingEntryId = null;
+                return;
+            }
+            if (entry.body !== originalBody) {
+                this.invalidateRenderCacheForFile(entry.filePath);
+                entry.body = originalBody;
+            }
+        } catch (err) {
+            this._editingEntryId = null;
+            console.error('[Handumanan] Failed to load reflection for editing', err);
+            new Notice('Could not load this reflection for editing. Please reopen it and try again.');
+            return;
+        }
         leaf.empty();
         leaf.addClass('is-editing');
 
         const textarea = leaf.createEl('textarea', {
             cls: 'pos-inline-edit-textarea',
-            value: entry.body,
+            value: originalBody,
         });
+        textarea.focus();
 
         attachInlineTriggers(this.app, textarea);
         attachMediaPasteHandler(this.app, textarea, () => this.plugin.settings?.attachmentsFolder || '000 Bin/Handumanan Attachments');
@@ -910,63 +1068,49 @@ export class DesktopHubView extends ItemView {
         const btnRow = leaf.createDiv({ cls: 'pos-inline-edit-btns' });
         const saveBtn = btnRow.createEl('button', { cls: 'pos-action-btn pos-btn-primary', text: 'Save' });
         const cancelBtn = btnRow.createEl('button', { cls: 'pos-action-btn', text: 'Cancel' });
+        const errorEl = leaf.createDiv({ cls: 'pos-inline-edit-error', attr: { role: 'alert' } });
+        let saving = false;
 
         saveBtn.onclick = async () => {
+            if (saving) return;
             const val = textarea.value.trim();
-            if (!val) return;
-            await this.plugin.capture.updateNoteContent(entry.filePath, val);
-            entry.body = val;
-            this.invalidateRenderCacheForFile(entry.filePath);
-            this.updateStreamOnly();
+            if (!val) {
+                errorEl.setText('Write a reflection before saving, or cancel to leave it unchanged.');
+                return;
+            }
+            saving = true;
+            saveBtn.disabled = true;
+            cancelBtn.disabled = true;
+            errorEl.empty();
+            try {
+                await this.plugin.capture.updateNoteContent(entry.filePath, val, undefined, undefined, originalBody);
+                entry.body = val;
+                this.invalidateRenderCacheForFile(entry.filePath);
+                this._editingEntryId = null;
+                this.updateStreamOnly();
+            } catch (err) {
+                console.error('[Handumanan] Failed to save reflection edit', err);
+                const guidance = err instanceof JournalEditConflictError
+                    ? 'This reflection changed elsewhere. Your edit is still here. Copy it, cancel editing, then reopen the reflection to review changes before applying your edits.'
+                    : 'Could not save. Your edit is still here. Check the note or connection, then retry; copy your text before leaving.';
+                errorEl.setText(guidance);
+                new Notice(guidance, 8000);
+            } finally {
+                saving = false;
+                saveBtn.disabled = false;
+                cancelBtn.disabled = false;
+            }
         };
 
         cancelBtn.onclick = () => {
-            if (textarea.value.trim() !== entry.body.trim()) {
+            if (saving) return;
+            if (textarea.value.trim() !== originalBody.trim()) {
                 const confirmDiscard = window.confirm('Discard unsaved edits to this reflection?');
                 if (!confirmDiscard) return;
             }
+            this._editingEntryId = null;
             this.updateStreamOnly();
         };
-    }
-
-    private setupInfiniteScroll(container: HTMLElement, totalCount: number): void {
-        if (this._intersectionObserver) {
-            this._intersectionObserver.disconnect();
-        }
-
-        if (this._renderedCount >= totalCount) return;
-
-        // Ensure single sentinel at container bottom
-        if (this._scrollSentinelEl) {
-            this._scrollSentinelEl.remove();
-        }
-        this._scrollSentinelEl = container.createDiv({ cls: 'pos-scroll-sentinel' });
-
-        this._intersectionObserver = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting && !this._isLoadingMore) {
-                if (this._renderedCount < totalCount) {
-                    this._isLoadingMore = true;
-                    const filtered = this.getFilteredCaptures();
-                    const from = this._renderedCount;
-                    const to = Math.min(totalCount, from + BATCH_SIZE);
-                    const nextBatch = filtered.slice(from, to);
-
-                    // Move sentinel before appending next batch
-                    this._scrollSentinelEl?.remove();
-                    this.appendBatch(container, nextBatch);
-                    this._renderedCount = to;
-
-                    if (this._renderedCount < totalCount && this._scrollSentinelEl) {
-                        container.appendChild(this._scrollSentinelEl);
-                    }
-                    this._isLoadingMore = false;
-                }
-            }
-        }, { rootMargin: '300px' });
-
-        if (this._scrollSentinelEl) {
-            this._intersectionObserver.observe(this._scrollSentinelEl);
-        }
     }
 
     private updateStreamOnly(): void {

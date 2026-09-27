@@ -18,6 +18,11 @@ export class IndexService {
 
     private _sortedEntriesCache: JournalEntry[] = [];
     private _isSortedDirty = true;
+    private _indexEpoch = 0;
+    private _nextFileVersion = 0;
+    private _fileVersions = new Map<string, number>();
+    private _lastResurfacedPath: string | null = null;
+    private _loadedBodies = new WeakSet<JournalEntry>();
 
     constructor(app: App, settings: HandumananSettings) {
         this.app = app;
@@ -56,6 +61,9 @@ export class IndexService {
     }
 
     resetAllIndices(): void {
+        this._indexEpoch++;
+        this._fileVersions.clear();
+        this._lastResurfacedPath = null;
         this.journalIndex.clear();
         this._entriesByDay.clear();
         this._entriesByPerson.clear();
@@ -70,16 +78,23 @@ export class IndexService {
      */
     async buildIndices(): Promise<void> {
         this.resetAllIndices();
+        const epoch = this._indexEpoch;
         const files = this.app.vault.getMarkdownFiles().filter(f => this.isCaptureFile(f.path));
+        const uncached: TFile[] = [];
 
         for (const file of files) {
+            if (epoch !== this._indexEpoch) return;
+            if (this.app.vault.getAbstractFileByPath(file.path) !== file) continue;
             const cache = this.app.metadataCache.getFileCache(file);
             if (cache?.frontmatter) {
-                this.indexFromCache(file, cache);
-            } else {
-                // Fallback for un-cached files
-                await this.indexJournalFile(file);
+                if (!this._fileVersions.has(file.path)) this.indexFromCache(file, cache);
+            } else if (!this._fileVersions.has(file.path)) {
+                uncached.push(file);
             }
+        }
+        for (let i = 0; i < uncached.length; i += 16) {
+            if (epoch !== this._indexEpoch) return;
+            await Promise.all(uncached.slice(i, i + 16).map(file => this.indexJournalFile(file)));
         }
         this._isSortedDirty = true;
     }
@@ -184,13 +199,15 @@ export class IndexService {
     }
 
     async indexJournalFile(file: TFile): Promise<void> {
+        const epoch = this._indexEpoch;
+        const version = ++this._nextFileVersion;
+        this._fileVersions.set(file.path, version);
         try {
-            // Clear prior secondary index references to prevent memory leaks
-            this.removeCaptureFile(file.path);
-
-            // Use cachedRead for rapid non-blocking I/O
             const content = await this.app.vault.cachedRead(file);
             const entry = this.parseJournalFileContent(file, content);
+            if (epoch !== this._indexEpoch || this._fileVersions.get(file.path) !== version
+                || this.app.vault.getAbstractFileByPath(file.path) !== file) return;
+            this.removeEntryFromIndices(file.path);
             this.addEntryToIndices(file.path, entry);
         } catch (e) {
             console.warn('[IndexService] Could not index journal file:', file.path, e);
@@ -198,25 +215,39 @@ export class IndexService {
     }
 
     async ensureEntryBodyLoaded(entry: JournalEntry): Promise<string> {
-        if (entry.body && entry.body.length > 0) return entry.body;
+        if (entry.body || this._loadedBodies.has(entry)) return entry.body;
         const file = this.app.vault.getAbstractFileByPath(entry.filePath);
-        if (file instanceof TFile) {
-            const raw = await this.app.vault.cachedRead(file);
-            const fmMatch = raw.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
-            entry.body = fmMatch ? raw.slice(fmMatch[0].length).trim() : raw.trim();
-            entry.wordCount = entry.body.trim() ? entry.body.trim().split(/\s+/).length : 0;
-            entry.readingTimeMin = Math.max(1, Math.ceil(entry.wordCount / 200));
-            return entry.body;
+        if (!(file instanceof TFile)) throw new Error(`Reflection not found: ${entry.filePath}`);
+        const raw = await this.app.vault.cachedRead(file);
+        const fmMatch = raw.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+        entry.body = fmMatch ? raw.slice(fmMatch[0].length).trim() : raw.trim();
+        entry.wordCount = entry.body ? entry.body.split(/\s+/).length : 0;
+        entry.readingTimeMin = Math.max(1, Math.ceil(entry.wordCount / 200));
+        this._loadedBodies.add(entry);
+        return entry.body;
+    }
+
+    private removeEntryFromIndices(filePath: string): void {
+        const entry = this.journalIndex.get(filePath);
+        if (!entry) return;
+        this.journalIndex.delete(filePath);
+        const remove = (index: Map<string, Set<string>>, key: string) => {
+            const set = index.get(key);
+            if (!set) return;
+            set.delete(filePath);
+            if (!set.size) index.delete(key);
+        };
+        if (entry.day) remove(this._entriesByDay, entry.day);
+        for (const person of entry.people ?? []) {
+            remove(this._entriesByPerson, person.toLowerCase().replace(/^\[\[|\]\]$/g, ''));
         }
-        return '';
+        if (entry.mood) remove(this._entriesByMood, entry.mood.toLowerCase());
+        this._isSortedDirty = true;
     }
 
     removeCaptureFile(filePath: string): void {
-        this.journalIndex.delete(filePath);
-        for (const set of this._entriesByDay.values()) set.delete(filePath);
-        for (const set of this._entriesByPerson.values()) set.delete(filePath);
-        for (const set of this._entriesByMood.values()) set.delete(filePath);
-        this._isSortedDirty = true;
+        this._fileVersions.set(filePath, ++this._nextFileVersion);
+        this.removeEntryFromIndices(filePath);
     }
 
     handleRename(oldPath: string, newPath: string): void {
@@ -355,7 +386,7 @@ export class IndexService {
         const currentYear = today.format('YYYY');
 
         return this.getAllCaptures().filter(entry => {
-            if (entry.private || entry.type === 'unburdening') return false;
+            if (entry.private || entry.type === 'unburdening' || entry.tags?.includes('unburdening')) return false;
             const entryMoment = moment(entry.createdAtMs);
             return entryMoment.format('MM-DD') === currentMonthDay && entryMoment.format('YYYY') !== currentYear;
         });
@@ -365,10 +396,31 @@ export class IndexService {
      * Safe random serendipity memory resurfacing (excludes private or unburdening grief).
      */
     getRandomMemory(): JournalEntry | null {
-        const candidates = this.getAllCaptures().filter(e => !e.private && e.type !== 'unburdening');
-        if (candidates.length === 0) return null;
-        const index = Math.floor(Math.random() * candidates.length);
-        return candidates[index];
+        const today = moment().format('YYYY-MM-DD');
+        const eligible = this.getAllCaptures().filter(e =>
+            !e.private && e.type !== 'unburdening'
+            && !e.tags?.includes('unburdening') && e.day < today
+        );
+        if (!eligible.length) return null;
+
+        const anniversaryPaths = new Set(this.getOnThisDayEntries().map(entry => entry.filePath));
+        const anniversaries = eligible.filter(entry => anniversaryPaths.has(entry.filePath));
+        const pool = anniversaries.length ? anniversaries : eligible;
+        const candidates = pool.length > 1
+            ? pool.filter(entry => entry.filePath !== this._lastResurfacedPath)
+            : pool;
+        const totalWeight = candidates.reduce((sum, entry) => sum + (entry.favorite ? 2 : 1), 0);
+        let ticket = Math.random() * totalWeight;
+        for (const entry of candidates) {
+            ticket -= entry.favorite ? 2 : 1;
+            if (ticket < 0) {
+                this._lastResurfacedPath = entry.filePath;
+                return entry;
+            }
+        }
+        const last = candidates[candidates.length - 1];
+        this._lastResurfacedPath = last.filePath;
+        return last;
     }
 
     getTodayCapturesCount(): number {

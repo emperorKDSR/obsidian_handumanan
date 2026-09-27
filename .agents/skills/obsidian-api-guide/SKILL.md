@@ -5,10 +5,10 @@ description: A reference guide for Obsidian API interfaces, views, leaves, comma
 
 # Obsidian API Cheat Sheet
 
-This skill serves as a concise, token-efficient reference for Obsidian APIs used within DIWA.
+This skill serves as a concise reference for Obsidian APIs used by the Handumanan journal.
 
 ## 1. Views and Leaves (`ItemView`)
-To register custom workspace views (e.g. `DiwaView`, `DesktopHubView`):
+To register custom journal views (e.g. `DesktopHubView`):
 ```typescript
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 

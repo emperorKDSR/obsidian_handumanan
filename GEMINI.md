@@ -1,6 +1,6 @@
-# Workspace Rules: Handumanan — Personal OS Plugin
+# Workspace Rules: Handumanan — Journal Plugin
 
-This workspace contains the code for the **Handumanan** Obsidian plugin (forked from `obsidian_diwa`), which serves as a Personal OS for users.
+This workspace contains the code for the **Handumanan** Obsidian journal plugin (forked from `obsidian_diwa`). Focus on journal capture, reflection, privacy, and recall; do not treat legacy task, finance, AI, or planning modules as current features.
 
 ## 1. Project Memory Bank
 We use the **Memory Bank** pattern to maintain project continuity across stateless AI sessions. All agents operating in this workspace must respect and update the files in the `memory-bank/` directory:

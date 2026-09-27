@@ -1,164 +1,45 @@
-# Handumanan — Personal OS for Obsidian
+# Handumanan
 
-**Handumanan** (forked from [obsidian_diwa](https://github.com/emperorKDSR/obsidian_diwa)) is an Obsidian plugin for capturing thoughts, managing gawa and Bulsa, reviewing your week, and keeping a journal from one connected workspace across desktop, tablet, and mobile.
+**Handumanan** is a local-first journaling plugin for Obsidian. Capture reflections as Markdown notes, revisit them in a chronological stream, and write with fewer distractions. It is a journal plugin, not a task manager, finance ledger, weekly planner, AI assistant, or all-in-one Personal OS.
 
-Release: **v1.0.0** · See [CHANGELOG.md](./CHANGELOG.md) for release history.
+Current plugin version: **1.0.0** (see `manifest.json`). The project was forked from `obsidian_diwa`; old DIWA feature and release history does not describe the current plugin.
 
----
+## Get started
 
-## Current module set
+1. Install the plugin files (`main.js`, `manifest.json`, and `styles.css`) in `<vault>/.obsidian/plugins/handumanan/` and enable Handumanan under Community plugins.
+2. Open **Handumanan Journal** from the ribbon or run **Open Handumanan Life Journal** from the command palette.
+3. Write in the composer and submit your entry. `Ctrl+Enter` / `Cmd+Enter` submits while the composer is focused. To open the journal with a keyboard shortcut, assign one to a Handumanan command in Obsidian's Hotkeys settings; no default capture hotkey is registered.
 
-Handumanan’s primary workspace navigation is:
+Entries are stored as Markdown with YAML frontmatter under the configured journal folder (default: `000 Bin/Handumanan/`), partitioned by year and month. Your vault remains the source of truth.
 
-1. **Workspace**
-2. **Gawa**
-3. **Bulsa**
-4. **Review**
-5. **Journal**
+## Journaling features
 
-Supporting tabs and tools still in the plugin:
-- **Settings**
-- **Bulsa Insights**
-- **Monthly Review**
-- **Export & Backup**
+- **Reflection stream:** Browse entries by day in bounded 25-entry pages with Newer/Older controls; search and filter to Today, On This Day, Keepsakes, or Unburdening.
+- **Capture:** Use gentle time-of-day prompts, mood beads, private-entry marking, saved local drafts, and paste or attach media. Mood-only check-ins are supported.
+- **Write and revisit:** Edit or delete an entry, mark a keepsake, select entries for a non-destructive weave, or choose **Recall** to revisit an older memory. Recall prefers safe anniversary entries, favors keepsakes, and avoids immediately repeating a selection. Private and unburdening entries are excluded.
+- **Sanctuary mode:** Focus the composer and dim surrounding content for deep reflection. Press `Escape` to leave Sanctuary mode.
+- **Privacy Shield:** Blur reflection text in the journal view until deliberately revealed with each entry's reveal button. This is a visual screen-sharing/shoulder-surfing aid, **not encryption or access control**; Markdown remains readable in the vault and other Obsidian views.
+- **Inline links:** The composer supports `[[` file links, `#` context suggestions, `@` person suggestions, and `//` natural-language dates.
 
-The current 11.1.0 line no longer includes the removed Search, AI, Voice, Timeline, Synthesis, or Calendar modules.
+The journal view adapts to desktop, tablet, and mobile. It does not provide separate Gawa, Bulsa, Review, Search, AI, Voice, or Calendar modules.
 
----
+When editing an existing reflection, a failed save leaves your text in the editor and displays an error. If the note changed elsewhere after editing began, Handumanan refuses to overwrite its newer body: copy your unsaved text, cancel editing, and reopen the reflection to compare changes. Other editors or external sync tools can still change vault files independently.
 
-## Feature overview
+## Commands and settings
 
-### Workspace
-- `Open Workspace` routes to the right shell for your platform.
-- **Desktop:** dedicated workspace window with sidebar navigation, capture/feed center column, and right task pane.
-- **Tablet:** dense touch layout with top tabs and quick actions.
-- **Mobile:** bottom-nav shell for Workspace, Review, Bulsa, Gawa, and thoughts.
-- **Focus Mode** collapses desktop chrome so the center workspace can expand.
+Available command-palette actions:
 
-### Quick capture
-- Capture **thoughts** and **gawa** from the same flow.
-- Supports `#` contexts, `/` people insertion, `[[` note links, and `@date` triggers.
-- Handles pasted or dropped files/images in supported editors.
-- Keyboard shortcuts: `⌘K / Ctrl+K` to open capture, `⌘↵ / Ctrl+↵` to save.
+| Command | Effect |
+| --- | --- |
+| Open Handumanan Life Journal | Open the journal |
+| Open Sanctuary Mode (Deep Reflection) | Open and focus the journal composer |
+| Toggle Privacy Shield (Blur Reflections) | Toggle visual blur on open journal entries |
+| New Journal Entry | Open the journal for capture |
 
-### Gawa
-- Task workspace with Open / Done / Waiting / Someday organization.
-- Supports due dates, priority, energy, recurrence, and comments.
-- Available from nav or the `Open Gawa` command.
+In plugin settings you can configure the **Journal Folder**, **Attachments Folder**, **People / Constellations Folder**, **Default Privacy Shield**, and **Introspective Prompt Deck**. The default attachments and people folders are `000 Bin/Handumanan Attachments` and `000 Bin/Handumanan People`.
 
-### Bulsa
-- Recurring dues ledger backed by notes in the configured Bulsa folder.
-- Current ledger toggles between **Active** dues and **All History**.
-- Payment logging updates fields such as `last_payment_date` and `next_duedate`.
-- `Bulsa Insights` adds income, cashflow, and category breakdown views.
+## Development
 
-### Review
-- **Weekly Review** summarizes work, Bulsa activity, and planning for the next week.
-- Week plans support day-by-day intention setting and task assignment.
-- Review notes are stored under `Reviews/Weekly/`.
-- **Monthly Review** still exists as a supporting DIWA tab, but it is not pinned in the main workspace nav.
+Run `npm ci`, `npm test`, and `npm run build` to install locked dependencies, check journal service behavior, type-check, and bundle `main.js`. The build does not install into a vault; copy `main.js`, `manifest.json`, and `styles.css` to `<vault>/.obsidian/plugins/handumanan/` when deploying. Preserve the vault's `data.json`. A synthetic 10,000-entry metadata index check is included in the tests; real Obsidian device and vault performance still needs hands-on measurement.
 
-### Journal
-- `Open Journal` jumps directly into the journal surface.
-- Desktop uses a split archive/composer layout.
-- Mobile opens directly into the composer.
-- Entries support titles, journal types, and inline attachments.
-
-### Export & backup
-- `Export & Backup` remains a supporting DIWA tab rather than a main-nav module.
-- Thoughts CSV is written to the thoughts folder.
-- Gawa CSV is written to the gawa folder.
-- Full JSON backups are written to the thoughts folder.
-
----
-
-## Commands
-
-Current command palette actions registered in `main.ts`:
-
-- `Open Workspace`
-- `Open Journal`
-- `Open Gawa`
-- `Open Bulsa`
-
----
-
-## Architecture
-
-```text
-Composition root
-  └── src/main.ts
-
-Primary workspace routing
-  ├── src/view.ts
-  ├── src/views/DesktopHubView.ts
-  ├── src/views/MobileHubView.ts
-  ├── src/views/TabletHubView.ts
-  └── src/mobile/DiwaMobileShell.ts
-
-Feature tabs
-  ├── src/tabs/GawaTab.ts
-  ├── src/tabs/DuesTab.ts
-  ├── src/tabs/FinanceAnalyticsTab.ts
-  ├── src/tabs/ReviewTab.ts
-  ├── src/tabs/MonthlyReviewTab.ts
-  ├── src/tabs/JournalTab.ts
-  ├── src/tabs/ExportTab.ts
-  └── src/tabs/SettingsTab.ts
-
-Supporting services
-  ├── src/services/IndexService.ts
-  ├── src/services/VaultService.ts
-  ├── src/services/TaskLinkService.ts
-  ├── src/services/TaskReflectionService.ts
-  └── src/application/RefreshCoordinator.ts
-```
-
----
-
-## Storage notes
-
-DIWA primarily stores data as Markdown files with frontmatter.
-
-Key folders and outputs:
-- `thoughtsFolder` → thought notes
-- `tasksFolder` → gawa notes and CSV task exports
-- `pfFolder` → Bulsa notes
-- `reviewsFolder/Weekly` → weekly review notes
-- `reviewsFolder/Monthly` → monthly review notes
-- `attachmentsFolder` → pasted and dropped files
-- `peopleFolder` → people notes created from the `/` picker
-
----
-
-## Settings reference
-
-These are the current user-facing settings surfaces documented in the plugin UI:
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `thoughtsFolder` | `string` | `000 Bin/DIWA` | Folder for thought notes |
-| `tasksFolder` | `string` | `000 Bin/DIWA Gawa` | Folder for gawa notes |
-| `pfFolder` | `string` | `000 Bin/DIWA PF` | Folder for Bulsa notes |
-| `peopleFolder` | `string` | `000 Bin/DIWA People` | Folder used by the people picker |
-| `attachmentsFolder` | `string` | `000 Bin/DIWA Attachments` | Folder for pasted/dropped files |
-| `newNoteFolder` | `string` | `000 Bin` | Default folder for newly created notes |
-| `reviewsFolder` | `string` | `000 Bin/DIWA Reviews` | Root folder for weekly/monthly reviews |
-| `dateFormat` | `string` | `YYYY-MM-DD` | Display/storage date format |
-| `timeFormat` | `string` | `HH:mm` | Display/storage time format |
-| `monthlyIncome` | `number` | `0` | Used by Bulsa Insights cashflow views |
-| `mobileBottomBarHeight` | `number` | `56` | Reserved space for the Obsidian mobile toolbar |
-
----
-
-## Build & deploy
-
-```bash
-npm run build
-```
-
-Copy `main.js`, `manifest.json`, and `styles.css` into:
-
-```text
-<vault>/.obsidian/plugins/handumanan/
-```
+Architecture: `src/main.ts` registers the journal views and commands; `src/views/DesktopHubView.ts` implements the responsive journal; `src/services/CaptureService.ts` stores entries; `src/services/IndexService.ts` indexes them; `src/application/RefreshCoordinator.ts` coalesces view refreshes. The three registered platform view types use the same journal view class.

@@ -1,14 +1,14 @@
 ---
 name: dev-build-test
-description: Steps to compile DIWA TypeScript assets and test them inside the local Obsidian environment.
+description: Steps to compile Handumanan journal assets and test them inside Obsidian.
 ---
 
 # Developer Build & Test Runbook
 
-Use this skill when you need to bundle DIWA plugin files or verify local development builds.
+Use this skill when you need to bundle Handumanan journal files or verify local development builds.
 
 ## 1. Project Scripts
-Refer to scripts in [`package.json`](file:///Users/K26/Development/diwa/package.json):
+Refer to scripts in `package.json`:
 *   **Production Build**: `npm run build`
     *   Compiles typescript definitions (`tsc -noEmit -skipLibCheck`)
     *   Runs esbuild packaging to bundle `main.js`

@@ -121,12 +121,19 @@
 .pos-search-clear {
     position: absolute;
     right: 10px;
+    min-width: 28px;
+    min-height: 28px;
+    height: auto;
+    width: auto;
     color: var(--text-muted);
     cursor: pointer;
     font-size: 0.9em;
     user-select: none;
     padding: 4px 6px;
     border-radius: 50%;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -136,6 +143,10 @@
 .pos-search-clear:hover {
     color: var(--text-normal);
     background: var(--background-modifier-hover);
+}
+
+.pos-search-clear:disabled {
+    display: none;
 }
 
 .pos-header-actions {
@@ -1253,16 +1264,23 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
 }
 
 /* Privacy Shield Mode - Explicit Click-to-Reveal only (NO accidental hover leak) */
-.is-privacy-shield-active .pos-leaf-body {
+.pos-journal-container.is-privacy-shield-active .pos-leaf-body {
     filter: blur(9px);
     user-select: none;
     transition: filter 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    cursor: pointer;
 }
 
-.is-privacy-shield-active .pos-leaf-body.is-unblurred {
+.pos-journal-container.is-privacy-shield-active .pos-leaf-body.is-unblurred {
     filter: blur(0px) !important;
     user-select: auto !important;
+}
+
+.pos-leaf-reveal-btn {
+    display: none;
+}
+
+.pos-journal-container.is-privacy-shield-active .pos-leaf-reveal-btn {
+    display: inline-flex;
 }
 
 /* Sanctuary Mode */
@@ -1569,7 +1587,8 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
     transition: opacity 0.15s ease;
 }
 
-.pos-journal-leaf:hover .pos-leaf-actions {
+.pos-journal-leaf:hover .pos-leaf-actions,
+.pos-journal-leaf:focus-within .pos-leaf-actions {
     opacity: 1;
 }
 
@@ -1641,6 +1660,16 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
     margin-top: 8px;
 }
 
+.pos-inline-edit-error {
+    color: var(--text-error);
+    font-size: 0.85em;
+    line-height: 1.5;
+}
+
+.pos-inline-edit-error:empty {
+    display: none;
+}
+
 .pos-action-btn {
     background: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
@@ -1710,4 +1739,93 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
     max-width: 360px;
     color: var(--text-muted);
     line-height: 1.5;
+}
+
+.pos-recall-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--diwa-radius-sm);
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    font-size: 0.85em;
+}
+
+.pos-stream-page-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 8px 2px;
+    color: var(--text-muted);
+}
+
+.pos-stream-page-status {
+    font-size: 0.82em;
+}
+
+.pos-stream-page-status:focus {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+    border-radius: var(--diwa-radius-sm);
+}
+
+.pos-stream-page-footer {
+    border-top: 1px solid var(--background-modifier-border-faint);
+}
+
+.pos-journal-container :is(.pos-filter-chip, .pos-mood-bead, .pos-icon-btn, .pos-header-text-btn, .pos-search-clear, .pos-action-btn, .pos-composer-submit-btn):focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+    .pos-journal-container .pos-journal-leaf {
+        padding: 14px;
+    }
+
+    .pos-journal-header .pos-header-actions {
+        flex: 1;
+        min-width: 0;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .pos-journal-container .pos-leaf-actions {
+        opacity: 1;
+    }
+
+    .pos-journal-container .pos-leaf-actions .pos-icon-btn,
+    .pos-journal-container .pos-search-clear {
+        min-width: 36px;
+        min-height: 36px;
+    }
+
+    .pos-journal-container .pos-stream-empty-state {
+        padding: 28px 12px;
+    }
+
+    .pos-journal-container .pos-recall-banner {
+        align-items: flex-start;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pos-journal-container *,
+    .pos-journal-container *::before,
+    .pos-journal-container *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+
+    .pos-journal-container .pos-journal-leaf:hover,
+    .pos-journal-container.is-sanctuary-mode .pos-journal-composer {
+        transform: none;
+    }
 }

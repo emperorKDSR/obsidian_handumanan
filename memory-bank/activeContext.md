@@ -1,25 +1,21 @@
-# Active Context: Handumanan — Life Journaling OS (Production-Grade)
+# Active Context: Handumanan Journal
 
-## Current State: Production Hardened & Deployed
-- **Architectural Upgrades Implemented**:
-  - **Decoupled Shell Architecture**: Separated the composer from the document stream in `DesktopHubView.ts`. Live user keystrokes, focus, and mobile virtual keyboards are never destroyed by background sync file events.
-  - **Crash-Safe Frontmatter**: Migrated from regex string replacement to Obsidian's official `app.fileManager.processFrontMatter` in `CaptureService.ts`.
-  - **10k-Scale MetadataCache Startup**: Replaced sequential disk reads with `app.metadataCache.getFileCache()`, dropping startup time for large vaults from 30+ seconds to <100ms.
-  - **Append-Only Infinite Stream**: Replaced quadratic DOM teardowns on scroll with true append-only streaming and cached Markdown render fragments.
-  - **Privacy Shield Hardening**: Removed accidental-glimpse `:hover` unblurring in `styles.css`. Reflections strictly require intentional click-to-reveal.
-  - **Syntax Disambiguation**: Reassigned `@` exclusively to `PersonSuggestModal` for interpersonal constellation mentions, shifting natural language dates to `//`.
-  - **Psychological Safety in Serendipity**: Excluded `private: true` and `type: 'unburdening'` entries from random memory resurfacing (`🎲 Resurface`) to protect emotional safety.
-  - **Autobiographical Weaving**: Set `trashSources: false` by default in `MergeNotesModal.ts`; tagged source entries with `synthesized: true` and `wovenInto: [[Target]]` while generating a provenance appendix.
-  - **Circadian Prompts & Pebble-Drop**: Added time-aware prompt decks (Morning, Midday, Evening) and 1-tap presence check-ins via mood beads alone.
-  - **WCAG AA Light Theme Contrast & Touch Targets**: Added theme-adaptive yellow tokens (`--color-yellow-subtle`, `--text-warning`) and enlarged touch targets for mobile.
-  - **UI/UX Beautification & Stationery Card System**:
-    - **Native Obsidian Lucide Icons**: Replaced all raw SVG paths and emojis in action buttons with native `setIcon(el, iconId)`. Solved the collapsing 0-width grey vertical bar `|` issue on `pos-icon-btn`.
-    - **Sanctuary Composer Card**: Implemented rounded card styling (`background: var(--background-secondary)`, 16px radius, subtle border, elevation shadow, focus glow) with circadian introspective prompts, fluid auto-expanding textarea, tactile mood bead chips, and a privacy lock toggle.
-    - **Contemplative Stationery Leaf Cards**: Styled each journal stream entry as an individual card (`pos-journal-leaf`) with hover elevation, subtle mood badge color tinting (calm, grateful, vulnerable, reflective, energized), keepsake heart active states, and inline editor support.
-    - **Centered Hairline Day Dividers**: Rendered clean date divider pills centered over a subtle hairline divider.
-    - **Balanced Header & Search Bar**: Repositioned search input to center between brand mark and right-aligned icon actions.
-    - **Full-Pane Journal View**: Removed the 820px shell cap, 68ch journal override, and 720px tablet cap so the view fills its Obsidian pane while preserving responsive padding.
+## Current focus
+The user has clarified that Handumanan is **primarily a journal plugin, not a Personal OS**. Product documentation, metadata, agent guidance, and the in-app settings title now reflect that scope; obsolete DIWA history, design, and out-of-scope agent/skill files were removed.
 
-## Verification & Deployment
-- TypeScript compilation: `npm run build` exits 0 with 0 errors and 0 warnings.
-- Production assets (`main.js`, `manifest.json`, `styles.css`) built and deployed to the selected local vault at `<vault>/.obsidian/plugins/handumanan/`; existing `data.json` preserved.
+## Journal-only maturity review
+- Independent product-design, visual-UI, interaction-UX, and system reviewers, followed by cross-challenge, agree the focused journal is **functionally mature with qualifications**, but **not yet best-in-class**. This was a source review, not a hands-on accessibility or device study.
+- Highest-priority gaps: silent inline-edit save failure, same-note concurrent write risk, and keyboard-inaccessible per-entry privacy reveal/search clearing. Reduced-motion support, first-use guidance, and measured large-vault behavior remain open.
+- Privacy Shield's command/header toggle is keyboard-accessible; it is the per-entry *reveal* that is not. An inline save failure leaves the user's edit text in the editor; it does not destroy the draft, but fails to communicate that saving did not succeed.
+
+## Implemented journal direction
+- `DesktopHubView` keeps the active composer separate from stream refreshes and renders a responsive journal stream.
+- `CaptureService` creates Markdown entries and persists drafts; `IndexService` supports filtering and excludes private/unburdening entries from resurfacing.
+- Sanctuary mode, Privacy Shield, prompts, mood check-ins, keepsakes, search, and non-destructive weaving support reflective writing.
+
+## Known limitations to verify or improve
+- Inline-edit save failures now surface without discarding unsaved text; an entry changed externally since editing began is rejected with conflict guidance. This does not replace live merge resolution between Obsidian editor tabs or external sync tools.
+- Search clear and private-text reveal are keyboard-operable, leaf actions show on focus, and CSS honors reduced motion. First-entry guidance is shown in the empty journal.
+- The stream now uses bounded 25-entry pages. Indexing rejects stale asynchronous reads and runs uncached startup reads at bounded concurrency; Recall remains user-initiated and excludes private/unburdening entries.
+- Vitest service tests cover conflicts, metadata preservation, index races, privacy exclusions, and synthetic 10k-entry metadata indexing. Actual Obsidian desktop/mobile interaction, theme, sync, and scroll performance are not yet measured; historical deployment notes are not revalidated here.
+- On 2026-09-27, the production build and 14 service tests passed, and `main.js`, `manifest.json`, and `styles.css` were deployed to the user-confirmed local Obsidian vault. Installed asset hashes matched the build outputs; the existing plugin `data.json` hash was unchanged. Obsidian reload and hands-on behavior remain unverified.
