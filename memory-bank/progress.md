@@ -33,13 +33,11 @@
 * [x] **Autobiographical Weave (Preserve Provenance)**: Set default `trashSources: false` in `MergeNotesModal`; tagged source files with `synthesized: true` and `wovenInto: [[Target]]`, appending a provenance section.
 * [x] **Circadian Prompts & Pebble-Drop**: Time-aware prompt decks (Morning Awakening, Midday Grounding, Evening Unburdening), plus 1-tap presence check-in via mood beads alone.
 
-### 4. UI/UX Polish & Community Standards (P2)
-* [x] **Editorial Reading Measure**: Clamped stream container to `min(68ch, calc(100vw - 32px))` with line-height `1.72`.
-* [x] **Sanctuary Mode Immersion**: Faded header and filter carousel to 30% opacity during writing, and added `Escape` shortcut to exit.
-* [x] **Touch Target Optimization**: Enlarged mood beads and action buttons to mobile-friendly touch targets.
-* [x] **WCAG AA Contrast Compliance**: Fixed yellow/gold tokens on light themes with theme-adaptive CSS custom properties.
-* [x] **Obsidian Native Lucide Icons**: Replaced raw string SVG fragments and emojis with Obsidian's native `setIcon(el, iconId)` across all buttons (Privacy shield, Sanctuary, Resurface, Mobile search, Settings, Keepsake heart, Edit, Trash, Lock/Unlock), resolving the 0-width grey vertical bar `|` rendering bug.
-* [x] **Sanctuary Composer Card**: Elevated composer into a warm card container with fluid auto-expanding height, subtle border, shadow, and focus glow.
-* [x] **Stationery Leaf Cards**: Turned unstyled journal stream entries into cards with hover elevation, subtle mood badge color tinting, and hairline footer dividers.
-* [x] **Centered Hairline Day Dividers**: Styled clean date divider pills centered over a subtle hairline divider.
-* [x] **Community Plugin Hygiene**: Updated `manifest.json` description, raised `minAppVersion` to `1.4.0`, removed destructive tab detach in `onunload()`, and cleaned up global CSS namespaces.
+### 4. UI/UX Philosophy Alignment with `obsidian_diwa` (P0)
+* [x] **Continuous Document Stream (Outliner Flow)**: Replaced boxy stationery card containers with `obsidian_diwa`'s typography-first continuous outliner rows (`.pos-note-stream-item`). Fixed 68px left gutter (`.pos-note-gutter`), compact timestamps, and flush-right hover actions (`.pos-note-actions`).
+* [x] **Hero Quick Capture Composer**: Implemented `obsidian_diwa`'s compact idle capture bar (`.pos-composer-compact.pos-reflect-composer-compact`) that expands into the full desktop hero composer with borderless auto-expanding input, unified 28px pill buttons (`.pos-composer-pill-btn`), keyboard shortcut hints (`⌘↵ Save · ⇧↵ Next`), and clean Save button.
+* [x] **Mobile Frosted Glass Action Bar & Sticky Composer**: Added 1-line floating action bar (`.pos-mobile-action-bar`), bottom floating search capsule (`.pos-mobile-floating-search`), and sticky composer (`.pos-mobile-sticky-composer`) with `backdrop-filter: blur(24px)` and safe-area padding.
+* [x] **Live In-Place Task Interactivity**: Interactive markdown checkboxes (`.pos-interactive-checkbox`) with optimistic strike-through and direct in-place markdown file updates via `CaptureService.toggleTaskInFile`.
+* [x] **Design Tokens & Native Lucide Icons**: Strictly calibrated tokens (`--diwa-radius: 12px`, `--diwa-radius-pill: 9999px`, `--diwa-shadow`, `--diwa-stream-max-width`) and native Obsidian Lucide icons via `setIcon(el, iconId)`.
+* [x] **Sanctuary Mode & Privacy Shield**: Preserved distraction-free writing state and click-to-reveal privacy shield while aligning with `obsidian_diwa`'s minimalist design system.
+* [x] **Stream Row Typographic Baseline Alignment**: Fixed vertical misalignment between timestamp and first row of note text via `align-items: baseline !important;`, direct Markdown rendering into `bodyEl`, and zero-margin resets on first children.

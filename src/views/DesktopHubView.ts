@@ -3,49 +3,14 @@ import type HandumananPlugin from '../main';
 import { 
     VIEW_TYPE_DESKTOP_HUB, 
     DESKTOP_HUB_ICON_ID, 
-    INTROSPECTIVE_PROMPTS,
 } from '../constants';
-import { JournalEntry, JournalFilterMode, JournalType } from '../types';
+import { JournalEntry, JournalFilterMode, ScratchpadFilterMode, CaptureEntry } from '../types';
 import { MergeNotesModal } from '../modals/MergeNotesModal';
+import { ImageLightboxModal } from '../modals/ImageLightboxModal';
 import { isTablet, attachInlineTriggers, attachMediaPasteHandler } from '../utils';
 import { attachMobileSheetViewportBehavior } from '../utils/mobileSheetViewport';
 
 const BATCH_SIZE = 25;
-
-export const CIRCADIAN_PROMPTS = {
-    morning: [
-        "What gentle intention guides your morning?",
-        "What feeling or dream did you awaken with?",
-        "What mindset do you choose to embody today?",
-        "Where would you like to direct your energy today?"
-    ],
-    midday: [
-        "Where is there tension you can quietly release right now?",
-        "What caught your eye or touched you so far today?",
-        "What went better than expected this morning?",
-        "How is your body feeling right in this moment?"
-    ],
-    evening: [
-        "What truth spoke loudest to you today?",
-        "What friction or unexpressed thought are you carrying?",
-        "Speak your heart uncensored. What can you let go of before you sleep?",
-        "What is something small you felt genuine gratitude for today?",
-        "A lesson life quietly taught you today..."
-    ]
-};
-
-export function getCircadianPrompt(): string {
-    const hour = moment().hour();
-    let pool: string[];
-    if (hour >= 5 && hour < 11) {
-        pool = CIRCADIAN_PROMPTS.morning;
-    } else if (hour >= 11 && hour < 17) {
-        pool = CIRCADIAN_PROMPTS.midday;
-    } else {
-        pool = CIRCADIAN_PROMPTS.evening;
-    }
-    return pool[Math.floor(Math.random() * pool.length)];
-}
 
 export class DesktopHubView extends ItemView {
     plugin: HandumananPlugin;
@@ -58,19 +23,23 @@ export class DesktopHubView extends ItemView {
     private _composerTextarea: HTMLTextAreaElement | null = null;
     private _composerSubmitBtn: HTMLButtonElement | null = null;
 
-    private _activeFilter: JournalFilterMode = 'all';
+    private _activeFilter: ScratchpadFilterMode = 'all';
+    private _filterTasksOnly: boolean = false;
     private _searchQuery: string = '';
     private _searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    private _selectedAreaForNewNote: string = '';
+    private _selectedImportantForNewNote: boolean = false;
     private _selectedEntryIds: Set<string> = new Set();
     private _selectionMode: boolean = false;
     private _editingEntryId: string | null = null;
     private _mobileSearchOpen: boolean = false;
+    private _mobileComposerOpen: boolean = false;
+    private _desktopComposerExpanded: boolean = false;
     private _viewportCleanup: (() => void) | null = null;
 
-    // Journal Modes
+    // Privacy & Sanctuary Modes
     private _isPrivacyShieldActive: boolean = false;
     private _isSanctuaryMode: boolean = false;
-    private _selectedMood: string = '';
     private _isEntryPrivate: boolean = false;
     _capturePending: number = 0;
     _taskPending: number = 0;
@@ -82,7 +51,7 @@ export class DesktopHubView extends ItemView {
     private _isLoadingMore: boolean = false;
     private _renderedMarkdownCache: Map<string, HTMLElement> = new Map();
     private _streamComponent: Component | null = null;
-    private _lastRenderedDay: string = '';
+    private _keyHandler: ((e: KeyboardEvent) => void) | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: HandumananPlugin) {
         super(leaf);
@@ -95,7 +64,7 @@ export class DesktopHubView extends ItemView {
     }
 
     getDisplayText(): string {
-        return 'Handumanan Journal';
+        return 'Handumanan';
     }
 
     getIcon(): string {
@@ -131,33 +100,68 @@ export class DesktopHubView extends ItemView {
     async onOpen(): Promise<void> {
         this.contentEl.empty();
         this.contentEl.addClass('diwa-workspace-root');
-        this.contentEl.addClass('handumanan-journal-view');
+        this.contentEl.addClass('pos-scratchpad-view');
 
-        if (Platform.isMobile && !isTablet(this.app)) {
+        const isMobile = Platform.isMobile && !isTablet(this.app);
+        if (isMobile) {
             this._viewportCleanup = attachMobileSheetViewportBehavior({
                 sheetEl: this.contentEl,
                 scrollEl: this.contentEl,
             });
+
+            // Prevent unwanted horizontal scrolling or drift on mobile runtimes
+            const win = this.contentEl.ownerDocument.defaultView ?? window;
+            const doc = this.contentEl.ownerDocument;
+            const scrollLock = () => {
+                if (win.scrollY !== 0 || win.scrollX !== 0) win.scrollTo(0, 0);
+                if (doc.documentElement.scrollLeft !== 0) doc.documentElement.scrollLeft = 0;
+                if (doc.body.scrollLeft !== 0) doc.body.scrollLeft = 0;
+                if (this.contentEl.scrollLeft !== 0) this.contentEl.scrollLeft = 0;
+            };
+            win.addEventListener('scroll', scrollLock, { passive: true });
+            this.contentEl.addEventListener('scroll', scrollLock, { passive: true });
+            this.register(() => {
+                win.removeEventListener('scroll', scrollLock);
+                this.contentEl.removeEventListener('scroll', scrollLock);
+            });
         }
 
-        this._containerEl = this.contentEl.createDiv({ cls: 'pos-scratchpad-container pos-journal-container' });
+        this.setupViewKeyHandler();
+        this.renderView();
 
-        // Sanctuary escape hatch listener
-        this.registerDomEvent(window, 'keydown', (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && this._isSanctuaryMode) {
-                this._isSanctuaryMode = false;
-                this._containerEl?.removeClass('is-sanctuary-mode');
-                if (this._headerBarEl) this.renderHeaderBar(this._headerBarEl);
+        // Click outside listener to dismiss mobile composer or inline editor
+        this.contentEl.addEventListener('pointerdown', (e: PointerEvent) => {
+            const target = e.target as HTMLElement | null;
+            if (!target) return;
+
+            if (this._mobileComposerOpen && this._composerEl) {
+                if (!this._composerEl.contains(target) && !target.closest('.modal, .pos-modal, .suggestion-container, .menu, .suggestion-item')) {
+                    this._mobileComposerOpen = false;
+                    if (this._containerEl) {
+                        this.renderComposer(this._containerEl, true);
+                    }
+                }
+            }
+
+            if (this._editingEntryId) {
+                const editorEl = this.contentEl.querySelector('.pos-inline-edit-textarea, .pos-inline-edit-btns');
+                if (editorEl && !editorEl.contains(target) && !target.closest('.modal, .pos-modal, .suggestion-container, .menu, .suggestion-item, .pos-note-stream-item')) {
+                    this._editingEntryId = null;
+                    this.updateStreamOnly();
+                }
             }
         });
-
-        this.renderView();
     }
 
     async onClose(): Promise<void> {
         if (this._viewportCleanup) {
             this._viewportCleanup();
             this._viewportCleanup = null;
+        }
+
+        if (this._keyHandler) {
+            this.contentEl.removeEventListener('keydown', this._keyHandler);
+            this._keyHandler = null;
         }
 
         if (this._streamComponent) {
@@ -170,133 +174,198 @@ export class DesktopHubView extends ItemView {
             this._intersectionObserver.disconnect();
             this._intersectionObserver = null;
         }
+
         if (this._searchDebounceTimer) {
             clearTimeout(this._searchDebounceTimer);
             this._searchDebounceTimer = null;
         }
+
         this._renderedMarkdownCache.clear();
         this._containerEl = null;
         this._headerBarEl = null;
         this._composerEl = null;
-        this._composerTextarea = null;
-        this._composerSubmitBtn = null;
         this._streamContainerEl = null;
+        this._filterBarEl = null;
+        this._selectionBarEl = null;
     }
 
-    onActiveFileChange(_file?: TFile | null): void {}
+    private setupViewKeyHandler(): void {
+        if (this._keyHandler) {
+            this.contentEl.removeEventListener('keydown', this._keyHandler);
+        }
+        this._keyHandler = (e: KeyboardEvent) => {
+            const activeEl = document.activeElement as HTMLElement | null;
+            const isInsideInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
+
+            // Escape handling
+            if (e.key === 'Escape') {
+                if (this._selectionMode) {
+                    this._selectionMode = false;
+                    this._selectedEntryIds.clear();
+                    this.updateSelectionBar();
+                    this.updateStreamOnly();
+                    if (this._headerBarEl) this.renderHeaderBar(this._headerBarEl);
+                    return;
+                }
+                if (this._editingEntryId) {
+                    this._editingEntryId = null;
+                    this.updateStreamOnly();
+                    return;
+                }
+                if (this._searchQuery) {
+                    this._searchQuery = '';
+                    this.updateStreamOnly();
+                    const searchInput = this.contentEl.querySelector('.pos-search-input') as HTMLInputElement | null;
+                    if (searchInput) {
+                        searchInput.value = '';
+                        searchInput.blur();
+                    }
+                    return;
+                }
+                if (this._desktopComposerExpanded) {
+                    const textarea = this._composerEl?.querySelector('textarea');
+                    if (!textarea || !textarea.value.trim()) {
+                        this._desktopComposerExpanded = false;
+                        if (this._containerEl) {
+                            this.renderComposer(this._containerEl, false);
+                        }
+                        if (textarea) textarea.blur();
+                        return;
+                    }
+                }
+                if (this._isSanctuaryMode) {
+                    this._isSanctuaryMode = false;
+                    this._containerEl?.toggleClass('is-sanctuary-mode', false);
+                    if (this._headerBarEl) this.renderHeaderBar(this._headerBarEl);
+                    return;
+                }
+            }
+
+            if (isInsideInput) return;
+
+            // Hotkey: '/' or 'Cmd+F' -> Focus search
+            if (e.key === '/' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f')) {
+                e.preventDefault();
+                const searchInput = this.contentEl.querySelector('.pos-search-input') as HTMLInputElement | null;
+                if (searchInput) {
+                    searchInput.focus();
+                    searchInput.select();
+                }
+                return;
+            }
+
+            // Hotkey: 'c' or 'n' -> Focus / expand composer
+            if (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'n') {
+                e.preventDefault();
+                this._desktopComposerExpanded = true;
+                if (this._containerEl) {
+                    this.renderComposer(this._containerEl, false);
+                }
+                const textarea = this._composerEl?.querySelector('textarea');
+                if (textarea) {
+                    textarea.focus({ preventScroll: true });
+                }
+                return;
+            }
+        };
+        this.contentEl.addEventListener('keydown', this._keyHandler);
+    }
 
     refreshAll(): void {
-        // Protect active typing: only refresh filter counts and stream
-        if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
-        if (this._streamContainerEl) this.updateStreamOnly();
+        this.renderView(false);
     }
 
-    togglePrivacyShield(): void {
+    public focusComposer(): void {
+        this._desktopComposerExpanded = true;
+        if (this._containerEl) {
+            const isMobile = Platform.isMobile && !isTablet(this.app);
+            this.renderComposer(this._containerEl, isMobile);
+        }
+        setTimeout(() => {
+            if (this._composerTextarea && this._composerTextarea.isConnected) {
+                this._composerTextarea.focus({ preventScroll: true });
+            }
+        }, 50);
+    }
+
+    public togglePrivacyShield(): void {
         this._isPrivacyShieldActive = !this._isPrivacyShieldActive;
         this._containerEl?.toggleClass('is-privacy-shield-active', this._isPrivacyShieldActive);
         if (this._headerBarEl) {
             this.renderHeaderBar(this._headerBarEl);
         }
-        new Notice(this._isPrivacyShieldActive ? 'Privacy Shield active (Reflections blurred)' : 'Privacy Shield deactivated');
     }
 
-    focusComposer(): void {
-        this._isSanctuaryMode = true;
-        this._containerEl?.addClass('is-sanctuary-mode');
-        this._composerTextarea?.focus();
-        if (this._headerBarEl) this.renderHeaderBar(this._headerBarEl);
-    }
-
-    /**
-     * Builds or updates view layout.
-     * Decouples the composer shell so typing, cursor position, and IME remain intact across data refreshes.
-     */
     renderView(resetPagination = true): void {
-        if (!this._containerEl) return;
         if (resetPagination) {
             this._renderedCount = BATCH_SIZE;
         }
 
-        this._containerEl.toggleClass('is-privacy-shield-active', this._isPrivacyShieldActive);
-        this._containerEl.toggleClass('is-sanctuary-mode', this._isSanctuaryMode);
-
         const isMobile = Platform.isMobile && !isTablet(this.app);
+        this.contentEl.empty();
 
-        // Build static layout shell once
-        if (!this._composerEl) {
-            this._containerEl.empty();
+        const container = this.contentEl.createDiv({ cls: 'pos-scratchpad-container' });
+        this._containerEl = container;
+        container.toggleClass('is-sanctuary-mode', this._isSanctuaryMode);
+        container.toggleClass('is-privacy-shield-active', this._isPrivacyShieldActive);
 
-            this._headerBarEl = this._containerEl.createDiv({ cls: 'pos-header-bar pos-journal-header' });
-            this._filterBarEl = this._containerEl.createDiv({ cls: 'pos-filter-bar' });
-            this._selectionBarEl = this._containerEl.createDiv({ cls: 'pos-selection-bar-wrapper' });
+        // 1. Header Bar
+        const header = container.createDiv({ cls: 'pos-header-bar' });
+        this._headerBarEl = header;
+        this.renderHeaderBar(header);
 
-            if (!isMobile) {
-                this._composerEl = this._containerEl.createDiv({ cls: 'pos-hero-composer pos-journal-composer' });
-                this.renderComposer(this._composerEl, false);
-            }
+        // 2. Filter Carousel
+        const filterBar = container.createDiv({ cls: 'pos-filter-bar' });
+        this._filterBarEl = filterBar;
+        this.renderFilterBar(filterBar);
 
-            this._streamContainerEl = this._containerEl.createDiv({ cls: 'pos-document-stream pos-journal-stream' });
-
-            if (isMobile) {
-                this._composerEl = this._containerEl.createDiv({ cls: 'pos-mobile-sticky-composer pos-journal-composer' });
-                this.renderComposer(this._composerEl, true);
-            }
-        }
-
-        if (this._headerBarEl) this.renderHeaderBar(this._headerBarEl);
-        if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
+        // 3. Selection Action Bar (hidden when selection mode is inactive)
+        const selBarWrapper = container.createDiv({ cls: 'pos-selection-bar-wrapper' });
+        this._selectionBarEl = selBarWrapper;
         this.updateSelectionBar();
-        if (this._streamContainerEl) this.renderStream(this._streamContainerEl);
-        this.updateComposerVisibility();
-    }
 
-    private updateComposerVisibility(): void {
-        const isMobile = Platform.isMobile && !isTablet(this.app);
-        if (!isMobile) return;
-        const isSearching = this._mobileSearchOpen || Boolean(this._searchQuery.trim());
-        if (this._composerEl) {
-            this._composerEl.toggleClass('is-hidden', isSearching);
+        // 4. Hero Quick Capture (Desktop at top)
+        if (!isMobile) {
+            this.renderComposer(container, false);
         }
-        if (this._filterBarEl) {
-            this._filterBarEl.toggleClass('is-hidden', isSearching);
-        }
-        if (this._containerEl) {
-            this._containerEl.toggleClass('is-searching', isSearching);
+
+        // 5. Continuous Document Stream
+        const streamContainer = container.createDiv({ cls: 'pos-document-stream' });
+        this._streamContainerEl = streamContainer;
+        this.renderStream(streamContainer);
+
+        // 6. Mobile Sticky / Floating Controls (at bottom)
+        if (isMobile) {
+            this.renderComposer(container, true);
         }
     }
 
     private renderHeaderBar(header: HTMLElement): void {
         header.empty();
-
         const isMobile = Platform.isMobile && !isTablet(this.app);
 
+        // Title Section: Logo + Subtitle
         const titleSection = header.createDiv({ cls: 'pos-header-title-section' });
         titleSection.createSpan({ cls: 'pos-header-logo', text: 'Handumanan' });
-        titleSection.createSpan({ cls: 'pos-header-subtitle', text: 'Life Journal' });
+        titleSection.createSpan({ cls: 'pos-header-subtitle', text: 'WORKSPACE' });
 
-        // Search Bar (Center / Flexible)
-        if (!isMobile || this._mobileSearchOpen || this._searchQuery) {
+        // Search Capsule (Desktop: centered bar; Mobile: conditionally visible)
+        if (!isMobile || this._mobileSearchOpen || Boolean(this._searchQuery)) {
             const searchContainer = header.createDiv({ cls: 'pos-search-container' });
             const searchInput = searchContainer.createEl('input', {
-                type: 'search',
-                placeholder: 'Search reflections, #themes, @people...',
                 cls: 'pos-search-input',
-                value: this._searchQuery,
-                attr: {
-                    enterkeyhint: 'search',
-                    autocomplete: 'off',
-                    spellcheck: 'false',
-                }
+                type: 'text',
+                placeholder: 'Search thoughts, #tags, or tasks...',
+                value: this._searchQuery
             });
 
-            searchInput.oninput = (e) => {
-                const val = (e.target as HTMLInputElement).value;
+            searchInput.oninput = () => {
                 if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
                 this._searchDebounceTimer = setTimeout(() => {
-                    this._searchQuery = val;
+                    this._searchQuery = searchInput.value.trim();
                     this._renderedCount = BATCH_SIZE;
                     this.updateStreamOnly();
-                }, 120);
+                }, 150);
             };
 
             if (this._searchQuery || isMobile) {
@@ -311,28 +380,18 @@ export class DesktopHubView extends ItemView {
                     this._renderedCount = BATCH_SIZE;
                     this.renderHeaderBar(header);
                     this.updateStreamOnly();
-                    this.updateComposerVisibility();
                 };
             }
         }
 
+        // Action Buttons Row
         const actions = header.createDiv({ cls: 'pos-header-actions' });
-
-        // Privacy Shield toggle
-        const privacyBtn = actions.createEl('button', {
-            cls: `pos-icon-btn pos-privacy-toggle ${this._isPrivacyShieldActive ? 'is-active' : ''}`,
-            attr: { 'aria-label': this._isPrivacyShieldActive ? 'Disable Privacy Shield' : 'Enable Privacy Shield (Blur Reflections)' }
-        });
-        setIcon(privacyBtn, this._isPrivacyShieldActive ? 'eye-off' : 'eye');
-        privacyBtn.onclick = () => {
-            this.togglePrivacyShield();
-        };
 
         // Sanctuary Mode toggle
         const sanctuaryBtn = actions.createEl('button', {
             cls: `pos-header-text-btn pos-sanctuary-btn ${this._isSanctuaryMode ? 'is-active' : ''}`,
             text: this._isSanctuaryMode ? '✦ Sanctuary' : 'Sanctuary',
-            attr: { 'aria-label': 'Toggle Sanctuary Mode (Focused Deep Reflection)' }
+            attr: { 'aria-label': 'Toggle Sanctuary Focus Mode' }
         });
         sanctuaryBtn.onclick = () => {
             this._isSanctuaryMode = !this._isSanctuaryMode;
@@ -343,19 +402,32 @@ export class DesktopHubView extends ItemView {
             }
         };
 
-        // Resurface / Serendipity memory recall (safely excludes unburdening/private)
+        // Privacy Shield toggle (eye / eye-off)
+        const privacyBtn = actions.createEl('button', {
+            cls: `pos-icon-btn pos-privacy-toggle ${this._isPrivacyShieldActive ? 'is-active' : ''}`,
+            attr: { 'aria-label': this._isPrivacyShieldActive ? 'Disable Privacy Shield' : 'Enable Privacy Shield (Blur Reflections)' }
+        });
+        setIcon(privacyBtn, this._isPrivacyShieldActive ? 'eye-off' : 'eye');
+        privacyBtn.onclick = () => {
+            this._isPrivacyShieldActive = !this._isPrivacyShieldActive;
+            this._containerEl?.toggleClass('is-privacy-shield-active', this._isPrivacyShieldActive);
+            setIcon(privacyBtn, this._isPrivacyShieldActive ? 'eye-off' : 'eye');
+            privacyBtn.toggleClass('is-active', this._isPrivacyShieldActive);
+        };
+
+        // Resurface Serendipity button
         const resurfaceBtn = actions.createEl('button', {
             cls: 'pos-icon-btn pos-resurface-btn',
-            attr: { 'aria-label': 'Resurface a gentle memory' }
+            attr: { 'aria-label': 'Resurface a memory' }
         });
         setIcon(resurfaceBtn, 'sparkles');
         resurfaceBtn.onclick = () => {
             const memory = this.plugin.index.getRandomMemory();
             if (!memory) {
-                new Notice('No memories ready to resurface.');
+                new Notice('No memories available to resurface.');
                 return;
             }
-            new Notice(`Resurfaced memory from ${moment(memory.createdAtMs).format('MMMM D, YYYY')}`);
+            new Notice(`Resurfaced from ${moment(memory.createdAtMs).format('MMMM D, YYYY')}`);
             this._searchQuery = memory.title;
             this._renderedCount = BATCH_SIZE;
             this.renderHeaderBar(header);
@@ -366,7 +438,7 @@ export class DesktopHubView extends ItemView {
         const selectBtn = actions.createEl('button', {
             cls: `pos-header-text-btn ${this._selectionMode ? 'is-active' : ''}`,
             text: this._selectionMode ? 'Done' : 'Select',
-            attr: { 'aria-label': this._selectionMode ? 'Exit selection mode' : 'Select entries to weave together' }
+            attr: { 'aria-label': this._selectionMode ? 'Exit selection mode' : 'Select entries to merge or weave' }
         });
         selectBtn.onclick = () => {
             this._selectionMode = !this._selectionMode;
@@ -392,7 +464,6 @@ export class DesktopHubView extends ItemView {
                 }
                 this._renderedCount = BATCH_SIZE;
                 this.renderHeaderBar(header);
-                this.updateComposerVisibility();
                 this.updateStreamOnly();
             };
         }
@@ -415,40 +486,44 @@ export class DesktopHubView extends ItemView {
 
         const allEntries = this.plugin.index.getAllCaptures();
         const totalCount = allEntries.length;
+        const taskEntriesCount = allEntries.filter(e => e.hasTasks || (e.tasks && e.tasks.length > 0)).length;
         const todayCount = this.plugin.index.getTodayCapturesCount();
-        const onThisDayMatches = this.plugin.index.getOnThisDayEntries();
         const favoritesCount = this.plugin.index.getFavorites().length;
 
-        // 1. All Journal Entries
-        this.createFilterChip(scrollable, 'all', '📖 All Journal', totalCount);
+        // 1. All Notes Chip
+        this.createFilterChip(scrollable, 'all', 'All Notes', totalCount);
 
-        // 2. Today
-        this.createFilterChip(scrollable, 'today', '📅 Today', todayCount, todayCount > 0 ? 'pos-chip-accent' : '');
-
-        // 3. On This Day (Handumanan Flashback)
-        if (onThisDayMatches.length > 0) {
-            this.createFilterChip(scrollable, 'on_this_day', '✨ On This Day', onThisDayMatches.length, 'pos-chip-gold');
+        // 2. Open Tasks Chip
+        if (taskEntriesCount > 0) {
+            this.createFilterChip(scrollable, 'tasks', '☑️ Open Tasks', taskEntriesCount, 'pos-chip-tasks');
         }
 
-        // 4. Keepsakes / Favorites
+        // 3. Today Chip
+        this.createFilterChip(scrollable, 'today', '📅 Today', todayCount, todayCount > 0 ? 'pos-chip-today' : '');
+
+        // 4. Starred / Favorites Chip
         if (favoritesCount > 0) {
-            this.createFilterChip(scrollable, 'favorites', '❤️ Keepsakes', favoritesCount);
+            this.createFilterChip(scrollable, 'favorites', '⭐ Starred', favoritesCount, 'pos-chip-gold');
         }
 
-        // 5. Unburdening
-        const unburdeningCount = allEntries.filter(e => e.type === 'unburdening' || (e.tags && e.tags.includes('unburdening'))).length;
-        if (unburdeningCount > 0) {
-            this.createFilterChip(scrollable, 'unburdening', '🌧️ Unburdening', unburdeningCount);
+        // 5. Configured Contexts / Life Areas
+        const contexts = this.plugin.getContexts();
+        for (const ctx of contexts.slice(0, 8)) {
+            const count = allEntries.filter(e => e.tags && e.tags.includes(ctx.toLowerCase().replace(/^#/, ''))).length;
+            if (count > 0) {
+                this.createFilterChip(scrollable, ctx, `#${ctx}`, count);
+            }
         }
     }
 
-    private createFilterChip(parent: HTMLElement, filterId: JournalFilterMode, label: string, count: number, extraCls = ''): HTMLElement {
+    private createFilterChip(parent: HTMLElement, filterId: ScratchpadFilterMode, label: string, count: number, extraCls = ''): HTMLElement {
+        const isActive = this._activeFilter === filterId;
         const chip = parent.createDiv({
-            cls: `pos-filter-chip ${this._activeFilter === filterId ? 'is-active' : ''} ${extraCls}`,
+            cls: `pos-filter-chip ${isActive ? 'is-active' : ''} ${extraCls}`,
             attr: {
                 role: 'button',
                 tabindex: '0',
-                'aria-pressed': String(this._activeFilter === filterId)
+                'aria-pressed': String(isActive)
             }
         });
         chip.createSpan({ cls: 'pos-chip-label', text: label });
@@ -457,7 +532,7 @@ export class DesktopHubView extends ItemView {
         const toggleFilter = () => {
             this._activeFilter = this._activeFilter === filterId ? 'all' : filterId;
             this._renderedCount = BATCH_SIZE;
-            this.renderFilterBar(this._filterBarEl!);
+            if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
             this.updateStreamOnly();
         };
 
@@ -472,442 +547,957 @@ export class DesktopHubView extends ItemView {
         return chip;
     }
 
-    private renderComposer(composer: HTMLElement, isMobile: boolean): void {
-        composer.empty();
-
-        // Circadian introspective prompt placeholder
-        const placeholderPrompt = getCircadianPrompt();
-
-        // Textarea row
-        const inputRow = composer.createDiv({ cls: 'pos-composer-input-row' });
-        const textarea = inputRow.createEl('textarea', {
-            cls: 'pos-composer-textarea',
-            placeholder: placeholderPrompt,
-            attr: { rows: isMobile ? '2' : '3', enterkeyhint: 'enter' }
-        });
-        this._composerTextarea = textarea;
-
-        // Restore draft
-        const draft = this.plugin.capture.getDraft();
-        if (draft) {
-            textarea.value = draft;
-        }
-
-        // Wire formatting & triggers (binds @ to PersonSuggestModal)
-        attachInlineTriggers(
-            this.app, 
-            textarea, 
-            undefined, 
-            undefined, 
-            () => this.plugin.getContexts(), 
-            this.plugin.settings?.peopleFolder
-        );
-        attachMediaPasteHandler(this.app, textarea, () => this.plugin.settings?.attachmentsFolder || '000 Bin/Handumanan Attachments');
-
-        // Actions & Mood Beads row
-        const bottomRow = composer.createDiv({ cls: 'pos-composer-bottom-row' });
-
-        // Mood beads with accessibility
-        const moodBeads = bottomRow.createDiv({ cls: 'pos-mood-beads-container' });
-        const moods = [
-            { id: 'calm', label: '🌿 Calm' },
-            { id: 'grateful', label: '✨ Grateful' },
-            { id: 'vulnerable', label: '🌧️ Vulnerable' },
-            { id: 'reflective', label: '💭 Reflective' },
-            { id: 'energized', label: '🔥 Energized' },
-        ];
-
-        const updateSubmitBtnLabel = () => {
-            if (!this._composerSubmitBtn) return;
-            const hasText = Boolean(textarea.value.trim());
-            if (!hasText && this._selectedMood) {
-                // Pebble-Drop micro-entry label
-                this._composerSubmitBtn.setText(`✦ Log ${this._selectedMood}`);
-            } else {
-                this._composerSubmitBtn.setText(isMobile ? '↑' : '✦ Record');
-            }
-        };
-
-        moods.forEach(m => {
-            const bead = moodBeads.createSpan({
-                cls: `pos-mood-bead ${this._selectedMood === m.id ? 'is-selected' : ''}`,
-                text: m.label,
-                attr: {
-                    role: 'button',
-                    tabindex: '0',
-                    'aria-pressed': String(this._selectedMood === m.id)
-                }
-            });
-
-            const toggleMood = () => {
-                this._selectedMood = this._selectedMood === m.id ? '' : m.id;
-                moodBeads.querySelectorAll('.pos-mood-bead').forEach(el => {
-                    el.classList.remove('is-selected');
-                    el.setAttribute('aria-pressed', 'false');
-                });
-                if (this._selectedMood === m.id) {
-                    bead.classList.add('is-selected');
-                    bead.setAttribute('aria-pressed', 'true');
-                }
-                updateSubmitBtnLabel();
-            };
-
-            bead.onclick = toggleMood;
-            bead.onkeydown = (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    toggleMood();
-                }
-            };
-        });
-
-        // Right side controls
-        const controls = bottomRow.createDiv({ cls: 'pos-composer-controls' });
-
-        // Privacy lock button
-        const lockBtn = controls.createEl('button', {
-            cls: `pos-icon-btn pos-composer-privacy-btn ${this._isEntryPrivate ? 'is-active' : ''}`,
-            attr: { 'aria-label': this._isEntryPrivate ? 'Marked Private' : 'Mark entry private' }
-        });
-        setIcon(lockBtn, this._isEntryPrivate ? 'lock' : 'unlock');
-        lockBtn.onclick = () => {
-            this._isEntryPrivate = !this._isEntryPrivate;
-            setIcon(lockBtn, this._isEntryPrivate ? 'lock' : 'unlock');
-            lockBtn.toggleClass('is-active', this._isEntryPrivate);
-        };
-
-        // Submit button
-        const submitBtn = controls.createEl('button', {
-            cls: 'pos-composer-submit-btn',
-            text: isMobile ? '↑' : '✦ Record',
-            attr: { 'aria-label': 'Record Journal Entry (⌘ Enter)' }
-        });
-        this._composerSubmitBtn = submitBtn;
-
-        const executeSubmit = async () => {
-            const content = textarea.value.trim();
-            // Pebble-Drop check: if text is empty, must have a mood selected
-            if (!content && !this._selectedMood) return;
-
-            const mood = this._selectedMood;
-            const isPrivate = this._isEntryPrivate;
-            const isUnburdening = mood === 'vulnerable';
-
-            submitBtn.disabled = true;
-            try {
-                await this.plugin.capture.createJournalEntry(content, {
-                    mood,
-                    type: isUnburdening ? 'unburdening' : 'journal',
-                    isPrivate,
-                    prompt: placeholderPrompt,
-                });
-                textarea.value = '';
-                textarea.style.height = '';
-                this.plugin.capture.clearDraft();
-                this._selectedMood = '';
-                this._isEntryPrivate = false;
-                moodBeads.querySelectorAll('.pos-mood-bead').forEach(el => el.classList.remove('is-selected'));
-                setIcon(lockBtn, 'unlock');
-                lockBtn.removeClass('is-active');
-                updateSubmitBtnLabel();
-                new Notice(content ? 'Reflection recorded' : `Logged moment of ${mood}`);
-                this.refreshAll();
-            } catch (err) {
-                console.error('[Handumanan] Failed to save journal entry', err);
-                new Notice('Failed to record entry');
-            } finally {
-                submitBtn.disabled = false;
-            }
-        };
-
-        submitBtn.onclick = () => void executeSubmit();
-
-        textarea.onkeydown = (e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                e.preventDefault();
-                void executeSubmit();
-            }
-        };
-
-        textarea.oninput = () => {
-            this.plugin.capture.saveDraft(textarea.value);
-            updateSubmitBtnLabel();
-            // Fluid height expansion up to 55vh
-            textarea.style.height = 'auto';
-            const maxHeight = Math.min(window.innerHeight * 0.55, 450);
-            textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
-        };
-    }
-
     private updateSelectionBar(): void {
         if (!this._selectionBarEl) return;
         this._selectionBarEl.empty();
 
-        if (!this._selectionMode) {
+        if (!this._selectionMode || this._selectedEntryIds.size === 0) {
             this._selectionBarEl.style.display = 'none';
             return;
         }
 
-        this._selectionBarEl.style.display = 'flex';
+        this._selectionBarEl.style.display = 'block';
         const bar = this._selectionBarEl.createDiv({ cls: 'pos-selection-bar' });
 
-        const count = this._selectedEntryIds.size;
-        bar.createSpan({ cls: 'pos-selection-count', text: `${count} selected` });
+        const text = bar.createSpan({
+            cls: 'pos-selection-text',
+            text: `${this._selectedEntryIds.size} note${this._selectedEntryIds.size === 1 ? '' : 's'} selected`
+        });
 
         const actions = bar.createDiv({ cls: 'pos-selection-actions' });
-        const weaveBtn = actions.createEl('button', {
-            cls: 'pos-action-btn pos-btn-weave',
-            text: '✦ Weave Entries into Reflection',
-            attr: { disabled: count < 2 ? 'true' : null }
+
+        const mergeBtn = actions.createEl('button', {
+            cls: 'pos-action-btn pos-btn-primary pos-selection-btn',
+            text: 'Weave / Merge'
         });
-        weaveBtn.onclick = async () => {
-            if (this._selectedEntryIds.size < 2) {
-                new Notice('Select at least 2 entries to weave.');
-                return;
-            }
-            const selected = this.plugin.index.getAllCaptures().filter(e => this._selectedEntryIds.has(e.id));
-            new MergeNotesModal(this.app, this.plugin, selected, () => {
-                this._selectionMode = false;
+        mergeBtn.onclick = () => {
+            const selectedFiles = Array.from(this._selectedEntryIds);
+            const entries = selectedFiles
+                .map(id => this.plugin.index.journalIndex.get(id))
+                .filter((e): e is JournalEntry => e !== undefined);
+
+            new MergeNotesModal(this.app, this.plugin, entries, () => {
                 this._selectedEntryIds.clear();
-                this.refreshAll();
+                this._selectionMode = false;
+                if (this._headerBarEl) this.renderHeaderBar(this._headerBarEl);
+                this.updateSelectionBar();
+                this.updateStreamOnly();
             }).open();
         };
 
-        const cancelBtn = actions.createEl('button', {
-            cls: 'pos-action-btn',
-            text: 'Cancel'
+        const clearBtn = actions.createEl('button', {
+            cls: 'pos-action-btn pos-selection-btn',
+            text: 'Clear'
         });
-        cancelBtn.onclick = () => {
-            this._selectionMode = false;
+        clearBtn.onclick = () => {
             this._selectedEntryIds.clear();
             this.updateSelectionBar();
             this.updateStreamOnly();
         };
     }
 
+    private renderComposer(parent: HTMLElement, isMobile: boolean): void {
+        // === MOBILE VIEW COMPOSER ===
+        if (isMobile) {
+            if (this._composerEl && this._composerEl.parentElement === parent) {
+                this._composerEl.remove();
+            }
+
+            // 1. Mobile Floating Search Capsule when search is open
+            if (this._mobileSearchOpen || Boolean(this._searchQuery)) {
+                const searchWrapper = parent.createDiv({ cls: 'pos-mobile-floating-search' });
+                this._composerEl = searchWrapper;
+
+                const iconEl = searchWrapper.createDiv({ cls: 'pos-mobile-search-icon' });
+                setIcon(iconEl, 'search');
+
+                const searchInput = searchWrapper.createEl('input', {
+                    type: 'search',
+                    placeholder: 'Search notes, #tags, or tasks...',
+                    cls: 'pos-mobile-search-input',
+                    value: this._searchQuery,
+                    attr: { enterkeyhint: 'search' }
+                });
+
+                searchInput.oninput = () => {
+                    if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
+                    this._searchDebounceTimer = setTimeout(() => {
+                        this._searchQuery = searchInput.value.trim();
+                        this._renderedCount = BATCH_SIZE;
+                        this.updateStreamOnly();
+                    }, 120);
+                };
+
+                const clearBtn = searchWrapper.createEl('button', {
+                    cls: 'pos-mobile-search-clear',
+                    attr: { 'aria-label': 'Close search' }
+                });
+                setIcon(clearBtn, 'x');
+                clearBtn.onclick = () => {
+                    this._searchQuery = '';
+                    this._mobileSearchOpen = false;
+                    this._renderedCount = BATCH_SIZE;
+                    this.updateStreamOnly();
+                    this.renderComposer(parent, true);
+                };
+
+                setTimeout(() => { if (searchInput.isConnected) searchInput.focus(); }, 60);
+                return;
+            }
+
+            // 2. Mobile Idle Floating Action Bar (1-row frosted glass)
+            if (!this._mobileComposerOpen) {
+                const actionBar = parent.createDiv({ cls: 'pos-mobile-action-bar' });
+                this._composerEl = actionBar;
+
+                // Capture Note trigger
+                const newBtn = actionBar.createEl('button', {
+                    cls: 'pos-mobile-action-btn pos-mobile-action-new',
+                    attr: { 'aria-label': 'Capture thought or task' }
+                });
+                setIcon(newBtn, 'edit-3');
+                newBtn.onclick = () => {
+                    this._mobileComposerOpen = true;
+                    this.renderComposer(parent, true);
+                };
+
+                // Search trigger
+                const searchBtn = actionBar.createEl('button', {
+                    cls: `pos-mobile-action-btn ${this._mobileSearchOpen ? 'is-active' : ''}`,
+                    attr: { 'aria-label': 'Search' }
+                });
+                setIcon(searchBtn, 'search');
+                searchBtn.onclick = () => {
+                    this._mobileSearchOpen = true;
+                    this.renderComposer(parent, true);
+                };
+
+                // Select mode trigger
+                const selectBtn = actionBar.createEl('button', {
+                    cls: `pos-mobile-action-btn ${this._selectionMode ? 'is-active' : ''}`,
+                    attr: { 'aria-label': 'Selection mode' }
+                });
+                setIcon(selectBtn, 'check-square');
+                selectBtn.onclick = () => {
+                    this._selectionMode = !this._selectionMode;
+                    if (!this._selectionMode) this._selectedEntryIds.clear();
+                    this.updateSelectionBar();
+                    this.updateStreamOnly();
+                };
+
+                // Settings trigger
+                const settingsBtn = actionBar.createEl('button', {
+                    cls: 'pos-mobile-action-btn',
+                    attr: { 'aria-label': 'Settings' }
+                });
+                setIcon(settingsBtn, 'settings');
+                settingsBtn.onclick = () => {
+                    (this.app as any).setting?.open();
+                    (this.app as any).setting?.openTabById?.(this.plugin.manifest.id);
+                };
+
+                return;
+            }
+
+            // 3. Mobile Sticky Composer (Expanded active state)
+            const stickyComposer = parent.createDiv({ cls: 'pos-mobile-sticky-composer' });
+            this._composerEl = stickyComposer;
+
+            const mainRow = stickyComposer.createDiv({ cls: 'pos-mobile-composer-main-row' });
+            const textarea = mainRow.createEl('textarea', {
+                cls: 'pos-composer-textarea',
+                placeholder: 'Capture a thought, note, or task...',
+                attr: { rows: '2' }
+            });
+            this._composerTextarea = textarea;
+
+            const sendBtn = mainRow.createEl('button', {
+                cls: 'pos-composer-save-btn pos-mobile-send-btn',
+                text: '↑',
+                attr: { 'aria-label': 'Save note' }
+            });
+
+            // Accessory toolbar (Task, Area, Close)
+            const pillRow = stickyComposer.createDiv({ cls: 'pos-composer-toolbar' });
+            const leftPills = pillRow.createDiv({ cls: 'pos-composer-left' });
+
+            const taskBtn = leftPills.createEl('button', {
+                cls: 'pos-composer-pill-btn',
+                attr: { 'aria-label': 'Insert task' }
+            });
+            const taskIcon = taskBtn.createSpan({ cls: 'pos-btn-icon' });
+            setIcon(taskIcon, 'check-square');
+            taskBtn.createSpan({ text: 'Task' });
+            taskBtn.onclick = () => {
+                const cursor = textarea.selectionStart || 0;
+                const text = textarea.value;
+                const prefix = (cursor > 0 && text[cursor - 1] !== '\n') ? '\n- [ ] ' : '- [ ] ';
+                textarea.value = text.slice(0, cursor) + prefix + text.slice(cursor);
+                textarea.focus();
+                textarea.setSelectionRange(cursor + prefix.length, cursor + prefix.length);
+            };
+
+            const closeBtn = pillRow.createEl('button', {
+                cls: 'pos-composer-close-btn',
+                attr: { 'aria-label': 'Close composer' }
+            });
+            setIcon(closeBtn, 'x');
+            closeBtn.onclick = () => {
+                this._mobileComposerOpen = false;
+                this.renderComposer(parent, true);
+            };
+
+            // Draft restore & Auto-resize
+            const draft = this.plugin.capture.getDraft();
+            if (draft) textarea.value = draft;
+
+            textarea.oninput = () => {
+                textarea.style.height = 'auto';
+                textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+                this.plugin.capture.saveDraft(textarea.value);
+            };
+
+            attachInlineTriggers(this.app, textarea, undefined, undefined, () => this.plugin.getContexts(), this.plugin.settings?.peopleFolder);
+            attachMediaPasteHandler(this.app, textarea, () => this.plugin.settings?.attachmentsFolder || '000 Bin/Handumanan Attachments');
+
+            const doSave = async () => {
+                const text = textarea.value.trim();
+                if (!text) return;
+                sendBtn.disabled = true;
+                try {
+                    await this.plugin.capture.createCaptureNote(text, this._selectedAreaForNewNote, []);
+                    this.plugin.capture.clearDraft();
+                    textarea.value = '';
+                    this._mobileComposerOpen = false;
+                    this.renderComposer(parent, true);
+                    this.updateStreamOnly();
+                    new Notice('Note captured!');
+                } catch (err) {
+                    new Notice('Failed to save note');
+                } finally {
+                    sendBtn.disabled = false;
+                }
+            };
+            sendBtn.onclick = doSave;
+            return;
+        }
+
+        // === DESKTOP / TABLET HERO COMPOSER ===
+        if (this._composerEl && this._composerEl.parentElement === parent) {
+            this._composerEl.remove();
+        }
+
+        const draft = this.plugin.capture.getDraft();
+        const hasDraft = Boolean(draft && draft.trim().length > 0);
+        const isExpanded = this._desktopComposerExpanded || hasDraft;
+
+        if (!isExpanded) {
+            // Sleek Reflect-style fluid capture line (idle state)
+            const compactWrapper = parent.createDiv({
+                cls: 'pos-composer-compact pos-reflect-composer-compact',
+                attr: {
+                    tabindex: '0',
+                    role: 'button',
+                    'aria-label': 'Click to capture note or task'
+                }
+            });
+            this._composerEl = compactWrapper;
+
+            const triggerArea = compactWrapper.createDiv({ cls: 'pos-compact-trigger-area' });
+            const editIcon = triggerArea.createSpan({ cls: 'pos-compact-icon' });
+            setIcon(editIcon, 'edit-3');
+            triggerArea.createSpan({ cls: 'pos-compact-placeholder', text: "Capture your thought..." });
+
+            const activate = () => {
+                this._desktopComposerExpanded = true;
+                this.renderComposer(parent, false);
+                const ta = this._composerEl?.querySelector('textarea');
+                if (ta) ta.focus({ preventScroll: true });
+            };
+
+            compactWrapper.onclick = activate;
+            compactWrapper.onkeydown = (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    activate();
+                }
+            };
+            return;
+        }
+
+        // Expanded Desktop Hero Composer
+        const composerWrapper = parent.createDiv({ cls: 'pos-composer pos-desktop-composer' });
+        this._composerEl = composerWrapper;
+
+        const textarea = composerWrapper.createEl('textarea', {
+            cls: 'pos-composer-textarea pos-desktop-composer-textarea',
+            placeholder: 'What’s on your mind? Capture a thought, task (- [ ]), or note...',
+            attr: { rows: '2' }
+        });
+        this._composerTextarea = textarea;
+
+        if (draft) textarea.value = draft;
+
+        // Auto-expand without forced reflow
+        const autoResize = () => {
+            textarea.style.height = 'auto';
+            textarea.style.height = `${Math.min(textarea.scrollHeight, 260)}px`;
+        };
+        textarea.oninput = () => {
+            autoResize();
+            this.plugin.capture.saveDraft(textarea.value);
+        };
+        setTimeout(autoResize, 0);
+
+        attachInlineTriggers(this.app, textarea, undefined, undefined, () => this.plugin.getContexts(), this.plugin.settings?.peopleFolder);
+        attachMediaPasteHandler(this.app, textarea, () => this.plugin.settings?.attachmentsFolder || '000 Bin/Handumanan Attachments');
+
+        // Composer Toolbar
+        const toolbar = composerWrapper.createDiv({ cls: 'pos-composer-toolbar' });
+        const leftControls = toolbar.createDiv({ cls: 'pos-composer-left' });
+
+        // Task Button Pill
+        const taskBtn = leftControls.createEl('button', {
+            cls: 'pos-composer-pill-btn pos-composer-task-btn',
+            attr: { 'aria-label': 'Insert task checkbox' }
+        });
+        const taskIcon = taskBtn.createSpan({ cls: 'pos-btn-icon' });
+        setIcon(taskIcon, 'check-square');
+        taskBtn.createSpan({ text: 'Task' });
+        taskBtn.onclick = () => {
+            const cursor = textarea.selectionStart || 0;
+            const text = textarea.value;
+            const prefix = (cursor > 0 && text[cursor - 1] !== '\n') ? '\n- [ ] ' : '- [ ] ';
+            textarea.value = text.slice(0, cursor) + prefix + text.slice(cursor);
+            textarea.focus({ preventScroll: true });
+            textarea.setSelectionRange(cursor + prefix.length, cursor + prefix.length);
+            autoResize();
+            this.plugin.capture.saveDraft(textarea.value);
+        };
+
+        // Important / Star Button Pill
+        const starBtn = leftControls.createEl('button', {
+            cls: `pos-composer-pill-btn pos-composer-star-btn ${this._selectedImportantForNewNote ? 'is-selected' : ''}`,
+            attr: { 'aria-label': 'Toggle important flag' }
+        });
+        const starIcon = starBtn.createSpan({ cls: 'pos-btn-icon' });
+        setIcon(starIcon, 'star');
+        starBtn.createSpan({ text: 'Important' });
+        starBtn.onclick = () => {
+            this._selectedImportantForNewNote = !this._selectedImportantForNewNote;
+            starBtn.toggleClass('is-selected', this._selectedImportantForNewNote);
+        };
+
+        // Context / Area Dropdown Pill
+        const areaBtn = leftControls.createEl('button', {
+            cls: `pos-composer-pill-btn ${this._selectedAreaForNewNote ? 'is-selected' : ''}`,
+            attr: { 'aria-label': 'Select area/context' }
+        });
+        const areaIcon = areaBtn.createSpan({ cls: 'pos-btn-icon' });
+        setIcon(areaIcon, 'tag');
+        const areaLabel = areaBtn.createSpan({ text: this._selectedAreaForNewNote ? `#${this._selectedAreaForNewNote}` : 'Area ▾' });
+
+        areaBtn.onclick = (e) => {
+            const menu = new Menu();
+            menu.addItem((item) => {
+                item.setTitle('No Context (General)')
+                    .setIcon('minus-circle')
+                    .setChecked(!this._selectedAreaForNewNote)
+                    .onClick(() => {
+                        this._selectedAreaForNewNote = '';
+                        areaLabel.setText('Area ▾');
+                        areaBtn.removeClass('is-selected');
+                    });
+            });
+            menu.addSeparator();
+            for (const ctx of this.plugin.getContexts()) {
+                menu.addItem((item) => {
+                    item.setTitle(`#${ctx}`)
+                        .setChecked(this._selectedAreaForNewNote === ctx)
+                        .onClick(() => {
+                            this._selectedAreaForNewNote = ctx;
+                            areaLabel.setText(`#${ctx}`);
+                            areaBtn.addClass('is-selected');
+                        });
+                });
+            }
+            menu.showAtMouseEvent(e);
+        };
+
+        // Privacy lock toggle pill
+        const lockBtn = leftControls.createEl('button', {
+            cls: `pos-composer-pill-btn ${this._isEntryPrivate ? 'is-selected' : ''}`,
+            attr: { 'aria-label': this._isEntryPrivate ? 'Marked Private' : 'Mark entry private' }
+        });
+        const lockIcon = lockBtn.createSpan({ cls: 'pos-btn-icon' });
+        setIcon(lockIcon, this._isEntryPrivate ? 'lock' : 'unlock');
+        lockBtn.createSpan({ text: this._isEntryPrivate ? 'Private' : 'Lock' });
+        lockBtn.onclick = () => {
+            this._isEntryPrivate = !this._isEntryPrivate;
+            lockBtn.toggleClass('is-selected', this._isEntryPrivate);
+            lockIcon.empty();
+            setIcon(lockIcon, this._isEntryPrivate ? 'lock' : 'unlock');
+        };
+
+        // Right Controls: Hint + Close + Save
+        const rightControls = toolbar.createDiv({ cls: 'pos-composer-right' });
+        rightControls.createSpan({ cls: 'pos-composer-hint', text: '⌘↵ Save · ⇧↵ Next' });
+
+        const closeBtn = rightControls.createEl('button', {
+            cls: 'pos-composer-close-btn',
+            attr: { 'aria-label': 'Close composer' }
+        });
+        setIcon(closeBtn, 'x');
+        closeBtn.onclick = () => {
+            this._desktopComposerExpanded = false;
+            this.renderComposer(parent, false);
+        };
+
+        const saveBtn = rightControls.createEl('button', {
+            cls: 'pos-composer-save-btn',
+            text: 'Capture Note',
+            attr: { 'aria-label': 'Save note (⌘ Enter)' }
+        });
+        this._composerSubmitBtn = saveBtn;
+
+        const doSave = async (keepActive = false) => {
+            const text = textarea.value.trim();
+            if (!text) return;
+            saveBtn.disabled = true;
+            this._capturePending++;
+            try {
+                await this.plugin.capture.createJournalEntry(text, {
+                    isPrivate: this._isEntryPrivate,
+                    tags: this._selectedAreaForNewNote ? [this._selectedAreaForNewNote] : [],
+                });
+
+                if (this._selectedImportantForNewNote) {
+                    const latest = this.plugin.index.getAllCaptures()[0];
+                    if (latest) {
+                        await this.plugin.capture.toggleFavorite(latest.filePath);
+                        latest.favorite = true;
+                    }
+                }
+
+                this.plugin.capture.clearDraft();
+                textarea.value = '';
+                autoResize();
+
+                if (keepActive) {
+                    new Notice('Captured! Ready for next ↵', 1500);
+                    textarea.focus();
+                } else {
+                    this._selectedAreaForNewNote = '';
+                    this._selectedImportantForNewNote = false;
+                    this._desktopComposerExpanded = false;
+                    this.renderComposer(parent, false);
+                    new Notice('Note captured!');
+                }
+                this.updateStreamOnly();
+                if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
+            } catch (err) {
+                new Notice('Failed to save note');
+            } finally {
+                this._capturePending--;
+                saveBtn.disabled = false;
+            }
+        };
+
+        saveBtn.onclick = () => { void doSave(false); };
+
+        textarea.onkeydown = (e) => {
+            if (e.shiftKey && e.key === 'Enter') {
+                e.preventDefault();
+                void doSave(true);
+            } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault();
+                void doSave(false);
+            }
+        };
+    }
+
     private getFilteredCaptures(): JournalEntry[] {
         let entries = this.plugin.index.getAllCaptures();
 
-        // Search query takes precedence
-        if (this._searchQuery.trim()) {
-            const q = this._searchQuery.toLowerCase().trim();
-            return entries.filter(e => 
-                (e.body && e.body.toLowerCase().includes(q))
-                || e.title.toLowerCase().includes(q)
-                || (e.tags ?? []).some(t => t.toLowerCase().includes(q))
-                || (e.people ?? []).some(p => p.toLowerCase().includes(q))
-                || (e.mood && e.mood.toLowerCase().includes(q))
-            );
+        // 1. Text Search Filter
+        if (this._searchQuery) {
+            const q = this._searchQuery.toLowerCase();
+            entries = entries.filter(e => {
+                const bodyMatch = e.body && e.body.toLowerCase().includes(q);
+                const titleMatch = e.title && e.title.toLowerCase().includes(q);
+                const tagMatch = e.tags && e.tags.some(t => t.toLowerCase().includes(q));
+                return bodyMatch || titleMatch || tagMatch;
+            });
         }
 
-        // Filter mode
+        // 2. Active Tab Filter
         if (this._activeFilter === 'today') {
             const todayStr = moment().format('YYYY-MM-DD');
             entries = entries.filter(e => e.day === todayStr);
-        } else if (this._activeFilter === 'on_this_day') {
-            entries = this.plugin.index.getOnThisDayEntries();
         } else if (this._activeFilter === 'favorites') {
-            entries = entries.filter(e => e.favorite);
-        } else if (this._activeFilter === 'unburdening') {
-            entries = entries.filter(e => e.type === 'unburdening' || (e.tags && e.tags.includes('unburdening')));
+            entries = entries.filter(e => e.favorite || e.pinned);
+        } else if (this._activeFilter === 'tasks') {
+            entries = entries.filter(e => e.hasTasks || (e.tasks && e.tasks.length > 0));
+        } else if (this._activeFilter !== 'all') {
+            // Context filter
+            const normFilter = this._activeFilter.toLowerCase().replace(/^#/, '');
+            entries = entries.filter(e => e.tags && e.tags.includes(normFilter));
         }
 
         return entries;
     }
 
-    /**
-     * Fresh render of the document stream.
-     */
+    private getDateHeadingForEntry(entry: JournalEntry): string {
+        const entryMoment = moment(entry.createdAtMs);
+        const now = moment();
+        const dayStr = entry.day || entryMoment.format('YYYY-MM-DD');
+
+        if (dayStr === now.format('YYYY-MM-DD')) {
+            return `Today · ${entryMoment.format('MMMM D')}`;
+        }
+        if (dayStr === now.clone().subtract(1, 'day').format('YYYY-MM-DD')) {
+            return `Yesterday · ${entryMoment.format('MMMM D')}`;
+        }
+        if (entryMoment.isSame(now, 'year')) {
+            return entryMoment.format('dddd, MMMM D');
+        }
+        return entryMoment.format('MMMM D, YYYY');
+    }
+
     private renderStream(container: HTMLElement): void {
-        container.empty();
-        this._lastRenderedDay = '';
+        if (this._intersectionObserver) {
+            this._intersectionObserver.disconnect();
+        }
 
         if (this._streamComponent) {
             this._streamComponent.unload();
             this.removeChild(this._streamComponent);
             this._streamComponent = null;
         }
-        this._streamComponent = new Component();
-        this.addChild(this._streamComponent);
+        this._streamComponent = this.addChild(new Component());
+
+        container.empty();
 
         const filtered = this.getFilteredCaptures();
+        const trimmedQuery = this._searchQuery.trim();
 
         if (filtered.length === 0) {
             const emptyEl = container.createDiv({ cls: 'pos-stream-empty-state' });
-            emptyEl.createDiv({ cls: 'pos-empty-icon', text: '🌱' });
-            emptyEl.createEl('h3', { text: this._searchQuery ? 'No reflections found' : 'Your sanctuary is peaceful' });
-            emptyEl.createEl('p', { text: this._searchQuery ? `No thoughts matched "${this._searchQuery}"` : 'Take a quiet breath and record what is alive in you.' });
+            const iconEl = emptyEl.createDiv({ cls: 'pos-empty-icon' });
+            setIcon(iconEl, trimmedQuery ? 'search' : 'file-text');
+
+            const title = trimmedQuery 
+                ? `No notes matching "${trimmedQuery}"` 
+                : 'Your stream is clear and ready';
+            const subtitle = trimmedQuery 
+                ? 'Check spelling or try a different keyword.' 
+                : 'Type above or press C to capture thoughts, ideas, or to-dos.';
+
+            emptyEl.createEl('h3', { text: title });
+            emptyEl.createEl('p', { text: subtitle });
             return;
         }
 
-        const initialBatch = filtered.slice(0, this._renderedCount);
-        this.appendBatch(container, initialBatch);
-        this.setupInfiniteScroll(container, filtered.length);
-    }
+        const visibleEntries = filtered.slice(0, this._renderedCount);
 
-    /**
-     * Appends a batch of entries to the stream without destroying existing DOM nodes.
-     * Guarantees 60fps scrolling at 10,000+ notes.
-     */
-    private appendBatch(container: HTMLElement, entries: JournalEntry[]): void {
-        for (const entry of entries) {
-            const entryDay = entry.day || moment(entry.createdAtMs).format('YYYY-MM-DD');
-            if (entryDay !== this._lastRenderedDay) {
-                this._lastRenderedDay = entryDay;
-                this.renderDayDivider(container, entryDay);
+        // Precompute note counts per date cluster
+        const dateCounts = new Map<string, number>();
+        for (const entry of filtered) {
+            const key = this.getDateHeadingForEntry(entry);
+            dateCounts.set(key, (dateCounts.get(key) || 0) + 1);
+        }
+
+        let lastDateKey = '';
+        for (const entry of visibleEntries) {
+            const dateKey = this.getDateHeadingForEntry(entry);
+            if (dateKey !== lastDateKey) {
+                lastDateKey = dateKey;
+                const divider = container.createDiv({ cls: 'pos-date-divider' });
+                divider.createSpan({ cls: 'pos-date-heading', text: dateKey });
+                const count = dateCounts.get(dateKey) || 1;
+                divider.createSpan({ cls: 'pos-date-count', text: `${count}` });
+                divider.createDiv({ cls: 'pos-date-line' });
             }
-            this.renderJournalLeaf(container, entry);
+
+            this.renderNoteItem(container, entry);
+        }
+
+        // Setup progressive lazy-load sentinel
+        if (this._renderedCount < filtered.length) {
+            if (!this._scrollSentinelEl) {
+                this._scrollSentinelEl = document.createElement('div');
+                this._scrollSentinelEl.className = 'pos-scroll-sentinel';
+            }
+            container.appendChild(this._scrollSentinelEl);
+            this.setupIntersectionObserver(filtered.length);
+        } else if (this._scrollSentinelEl) {
+            this._scrollSentinelEl.remove();
+            this._scrollSentinelEl = null;
         }
     }
 
-    private renderDayDivider(container: HTMLElement, dayStr: string): void {
-        const divider = container.createDiv({ cls: 'pos-day-divider' });
-        const now = moment();
-        const entryMoment = moment(dayStr, 'YYYY-MM-DD');
-
-        let displayLabel = entryMoment.format('MMMM D, YYYY');
-        if (dayStr === now.format('YYYY-MM-DD')) {
-            displayLabel = `Today · ${entryMoment.format('MMMM D')}`;
-        } else if (dayStr === now.clone().subtract(1, 'day').format('YYYY-MM-DD')) {
-            displayLabel = `Yesterday · ${entryMoment.format('MMMM D')}`;
-        } else if (entryMoment.isSame(now, 'year')) {
-            displayLabel = entryMoment.format('dddd, MMMM D');
+    private setupIntersectionObserver(totalCount: number): void {
+        if (this._intersectionObserver) {
+            this._intersectionObserver.disconnect();
         }
 
-        divider.createSpan({ cls: 'pos-day-label', text: displayLabel });
-    }
-
-    private renderJournalLeaf(container: HTMLElement, entry: JournalEntry): void {
-        const leaf = container.createDiv({ cls: 'pos-journal-leaf' });
-        leaf.dataset.id = entry.id;
-
-        // Header: Time, Mood, Privacy, Actions
-        const leafHeader = leaf.createDiv({ cls: 'pos-leaf-header' });
-        const metaLeft = leafHeader.createDiv({ cls: 'pos-leaf-meta-left' });
-
-        // Selection checkbox if in selection mode
-        if (this._selectionMode) {
-            const cb = metaLeft.createEl('input', { type: 'checkbox', cls: 'pos-leaf-select-cb' });
-            cb.checked = this._selectedEntryIds.has(entry.id);
-            cb.onclick = (ev) => {
-                ev.stopPropagation();
-                if (cb.checked) {
-                    this._selectedEntryIds.add(entry.id);
-                } else {
-                    this._selectedEntryIds.delete(entry.id);
+        this._intersectionObserver = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting && !this._isLoadingMore) {
+                if (this._renderedCount < totalCount && this._streamContainerEl) {
+                    this._isLoadingMore = true;
+                    this.appendNextBatch(this._streamContainerEl, totalCount);
+                    this._isLoadingMore = false;
                 }
+            }
+        }, { rootMargin: '300px' });
+
+        if (this._scrollSentinelEl) {
+            this._intersectionObserver.observe(this._scrollSentinelEl);
+        }
+    }
+
+    private appendNextBatch(container: HTMLElement, totalFiltered: number): void {
+        const filtered = this.getFilteredCaptures();
+        const startIdx = this._renderedCount;
+        const nextCount = Math.min(startIdx + BATCH_SIZE, filtered.length);
+        const newBatch = filtered.slice(startIdx, nextCount);
+        this._renderedCount = nextCount;
+
+        if (this._scrollSentinelEl) {
+            this._scrollSentinelEl.remove();
+        }
+
+        const dateCounts = new Map<string, number>();
+        for (const entry of filtered) {
+            const key = this.getDateHeadingForEntry(entry);
+            dateCounts.set(key, (dateCounts.get(key) || 0) + 1);
+        }
+
+        const dateDividers = container.querySelectorAll<HTMLElement>('.pos-date-heading');
+        let lastDateKey = dateDividers.length > 0 ? dateDividers[dateDividers.length - 1].textContent || '' : '';
+
+        for (const entry of newBatch) {
+            const dateKey = this.getDateHeadingForEntry(entry);
+            if (dateKey !== lastDateKey) {
+                lastDateKey = dateKey;
+                const divider = container.createDiv({ cls: 'pos-date-divider' });
+                divider.createSpan({ cls: 'pos-date-heading', text: dateKey });
+                const count = dateCounts.get(dateKey) || 1;
+                divider.createSpan({ cls: 'pos-date-count', text: `${count}` });
+                divider.createDiv({ cls: 'pos-date-line' });
+            }
+
+            this.renderNoteItem(container, entry);
+        }
+
+        if (this._renderedCount < totalFiltered && this._scrollSentinelEl) {
+            container.appendChild(this._scrollSentinelEl);
+            if (this._intersectionObserver) {
+                this._intersectionObserver.observe(this._scrollSentinelEl);
+            }
+        }
+    }
+
+    private renderNoteItem(parent: HTMLElement, entry: JournalEntry): void {
+        const isSelected = this._selectedEntryIds.has(entry.id);
+        const isImportant = this.plugin.index.isImportant(entry);
+        const isEditing = this._editingEntryId === entry.id;
+        const hasTasks = Boolean(entry.hasTasks || (entry.tasks && entry.tasks.length > 0));
+
+        const item = parent.createDiv({
+            cls: `pos-note-stream-item ${isSelected ? 'is-selected' : ''} ${this._selectionMode ? 'is-selection-mode' : ''} ${isImportant ? 'is-important' : ''} ${hasTasks ? 'has-tasks' : ''} ${isEditing ? 'is-editing' : ''}`
+        });
+
+        // Double-click to inline edit
+        if (!this._selectionMode) {
+            item.ondblclick = (e) => {
+                const target = e.target as HTMLElement;
+                if (target.closest('.pos-interactive-checkbox') || target.closest('.pos-note-actions') || target.closest('a') || target.closest('img')) {
+                    return;
+                }
+                this._editingEntryId = entry.id;
+                this.updateStreamOnly();
+            };
+        } else {
+            item.onclick = (e) => {
+                const target = e.target as HTMLElement;
+                if (target.closest('.pos-interactive-checkbox') || target.closest('.pos-note-actions') || target.closest('a')) {
+                    return;
+                }
+                if (this._selectedEntryIds.has(entry.id)) {
+                    this._selectedEntryIds.delete(entry.id);
+                } else {
+                    this._selectedEntryIds.add(entry.id);
+                }
+                item.toggleClass('is-selected', this._selectedEntryIds.has(entry.id));
                 this.updateSelectionBar();
             };
         }
 
-        // Time of Day
+        const isMobile = Platform.isMobile && !isTablet(this.app);
         const timeStr = moment(entry.createdAtMs).format('h:mm A');
-        metaLeft.createSpan({ cls: 'pos-leaf-time', text: timeStr });
 
-        // Mood Badge
-        if (entry.mood) {
-            metaLeft.createSpan({ cls: `pos-leaf-mood-badge pos-mood-${entry.mood.toLowerCase()}`, text: entry.mood });
+        // Mobile Micro-Card Layout
+        if (isMobile) {
+            item.addClass('is-mobile-card');
+
+            if (isEditing) {
+                const editorWrapper = item.createDiv({ cls: 'pos-note-content-wrap pos-inline-editor-wrap' });
+                this.renderInlineEditor(editorWrapper, entry);
+                return;
+            }
+
+            const cardHeader = item.createDiv({ cls: 'pos-mobile-card-header' });
+            const headerLeft = cardHeader.createDiv({ cls: 'pos-mobile-card-header-left' });
+
+            if (this._selectionMode) {
+                const cb = headerLeft.createEl('input', { type: 'checkbox', cls: 'pos-select-checkbox' });
+                cb.checked = isSelected;
+                cb.onclick = (e) => {
+                    e.stopPropagation();
+                    if (cb.checked) this._selectedEntryIds.add(entry.id);
+                    else this._selectedEntryIds.delete(entry.id);
+                    item.toggleClass('is-selected', cb.checked);
+                    this.updateSelectionBar();
+                };
+            }
+
+            headerLeft.createSpan({ cls: 'pos-note-time', text: timeStr });
+
+            const actionsEl = cardHeader.createDiv({ cls: 'pos-note-actions pos-mobile-card-actions' });
+            const starBtn = actionsEl.createSpan({
+                cls: `pos-action-icon pos-star-btn ${isImportant ? 'is-starred' : ''}`,
+                attr: { 'aria-label': 'Toggle Star' }
+            });
+            setIcon(starBtn, 'star');
+            starBtn.onclick = async (e) => {
+                e.stopPropagation();
+                const newState = await this.plugin.capture.toggleNoteImportance(entry.filePath);
+                entry.favorite = newState;
+                entry.pinned = newState;
+                this.invalidateRenderCacheForFile(entry.filePath);
+                this.updateStreamOnly();
+                if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
+            };
+
+            const moreBtn = actionsEl.createSpan({ cls: 'pos-action-icon pos-action-more', attr: { 'aria-label': 'Options' } });
+            setIcon(moreBtn, 'more-horizontal');
+            moreBtn.onclick = (e) => {
+                e.stopPropagation();
+                this.openNoteActionMenu(e, entry);
+            };
+
+            const contentWrap = item.createDiv({ cls: 'pos-note-content-wrap' });
+            const bodyEl = contentWrap.createDiv({ cls: 'pos-note-body markdown-rendered' });
+            this.renderEntryMarkdown(bodyEl, entry);
+            return;
         }
 
-        // Privacy indicator
-        if (entry.private) {
-            const privBadge = metaLeft.createSpan({ cls: 'pos-leaf-private-badge' });
-            setIcon(privBadge, 'lock');
+        // Desktop Inline Editing State
+        if (isEditing) {
+            item.addClass('is-editing');
+            const gutterEl = item.createDiv({ cls: 'pos-note-gutter' });
+            gutterEl.createSpan({ cls: 'pos-note-time', text: timeStr });
+
+            const editorWrapper = item.createDiv({ cls: 'pos-note-content-wrap pos-inline-editor-wrap' });
+            this.renderInlineEditor(editorWrapper, entry);
+            return;
         }
 
-        // Actions: Keepsake Heart, Edit, Trash
-        const leafActions = leafHeader.createDiv({ cls: 'pos-leaf-actions' });
+        // Desktop Horizontal Outliner Row
+        // 1. Left Gutter (Time + Checkbox)
+        const gutter = item.createDiv({ cls: 'pos-note-gutter' });
+        if (this._selectionMode) {
+            const cb = gutter.createEl('input', { type: 'checkbox', cls: 'pos-select-checkbox' });
+            cb.checked = isSelected;
+            cb.onclick = (e) => {
+                e.stopPropagation();
+                if (cb.checked) this._selectedEntryIds.add(entry.id);
+                else this._selectedEntryIds.delete(entry.id);
+                item.toggleClass('is-selected', cb.checked);
+                this.updateSelectionBar();
+            };
+        }
+        gutter.createSpan({ cls: 'pos-note-time', text: timeStr });
 
-        const heartBtn = leafActions.createEl('button', {
-            cls: `pos-icon-btn pos-heart-btn ${entry.favorite ? 'is-active' : ''}`,
-            attr: { 'aria-label': entry.favorite ? 'Remove Keepsake' : 'Mark as Keepsake' }
+        // 2. Content Wrap (Body + Badges + Actions)
+        const contentWrap = item.createDiv({ cls: 'pos-note-content-wrap' });
+
+        // Body with Markdown Renderer (rendered first so text baseline aligns directly with time)
+        const bodyEl = contentWrap.createDiv({ cls: 'pos-note-body markdown-rendered' });
+        this.renderEntryMarkdown(bodyEl, entry);
+
+        // Badges container (placed after body for natural reading flow and perfect time alignment)
+        if ((entry.tags && entry.tags.length > 0) || entry.private) {
+            const badges = contentWrap.createDiv({ cls: 'pos-note-badges' });
+            if (entry.private) {
+                const privBadge = badges.createSpan({ cls: 'pos-tag-badge' });
+                setIcon(privBadge, 'lock');
+            }
+            if (entry.tags) {
+                for (const t of entry.tags) {
+                    const tagBadge = badges.createSpan({ cls: 'pos-tag-badge', text: `#${t}` });
+                    tagBadge.onclick = (e) => {
+                        e.stopPropagation();
+                        this._activeFilter = t;
+                        if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
+                        this.updateStreamOnly();
+                    };
+                }
+            }
+        }
+
+        // Hover Action Buttons (Right-aligned)
+        const actionsEl = item.createDiv({ cls: 'pos-note-actions' });
+
+        const starBtn = actionsEl.createSpan({
+            cls: `pos-action-icon pos-star-btn ${isImportant ? 'is-starred' : ''}`,
+            attr: { 'aria-label': isImportant ? 'Unstar note' : 'Star note' }
         });
-        setIcon(heartBtn, 'heart');
-        heartBtn.onclick = async (e) => {
+        setIcon(starBtn, 'star');
+        starBtn.onclick = async (e) => {
             e.stopPropagation();
-            const isFav = await this.plugin.capture.toggleFavorite(entry.filePath);
-            entry.favorite = isFav;
-            heartBtn.toggleClass('is-active', isFav);
-            this.renderFilterBar(this._filterBarEl!);
+            const newState = await this.plugin.capture.toggleNoteImportance(entry.filePath);
+            entry.favorite = newState;
+            entry.pinned = newState;
+            this.invalidateRenderCacheForFile(entry.filePath);
+            this.updateStreamOnly();
+            if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
         };
 
-        const editBtn = leafActions.createEl('button', {
-            cls: 'pos-icon-btn pos-edit-btn',
-            attr: { 'aria-label': 'Edit Reflection' }
-        });
+        const editBtn = actionsEl.createSpan({ cls: 'pos-action-icon pos-edit-btn', attr: { 'aria-label': 'Edit note' } });
         setIcon(editBtn, 'pencil');
         editBtn.onclick = (e) => {
             e.stopPropagation();
-            this.renderInlineEditor(leaf, entry);
+            this._editingEntryId = entry.id;
+            this.updateStreamOnly();
         };
 
-        const trashBtn = leafActions.createEl('button', {
-            cls: 'pos-icon-btn pos-trash-btn',
-            attr: { 'aria-label': 'Trash' }
-        });
+        const trashBtn = actionsEl.createSpan({ cls: 'pos-action-icon pos-trash-btn', attr: { 'aria-label': 'Delete note' } });
         setIcon(trashBtn, 'trash-2');
         trashBtn.onclick = async (e) => {
             e.stopPropagation();
-            const confirmed = window.confirm('Move this reflection to trash?');
+            const confirmed = window.confirm('Move note to trash?');
             if (!confirmed) return;
             await this.plugin.capture.deleteNote(entry.filePath);
-            leaf.remove();
-            new Notice('Reflection moved to trash');
+            item.remove();
+            new Notice('Note moved to trash');
         };
 
-        // Rendered Body (with safe click-to-reveal toggle)
-        const bodyEl = leaf.createDiv({ cls: 'pos-leaf-body' });
-        bodyEl.onclick = (e) => {
-            if (this._isPrivacyShieldActive) {
-                e.stopPropagation();
-                bodyEl.classList.toggle('is-unblurred');
-            }
+        const moreBtn = actionsEl.createSpan({ cls: 'pos-action-icon pos-action-more', attr: { 'aria-label': 'More options' } });
+        setIcon(moreBtn, 'more-horizontal');
+        moreBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.openNoteActionMenu(e, entry);
         };
-
-        // Leaf Footer: Word count, People, Themes
-        const leafFooter = leaf.createDiv({ cls: 'pos-leaf-footer' });
-        const wordInfo = leafFooter.createSpan({ cls: 'pos-leaf-word-count', text: 'reading...' });
-
-        if (entry.people && entry.people.length > 0) {
-            const peopleContainer = leafFooter.createSpan({ cls: 'pos-leaf-people' });
-            peopleContainer.setText(`with ${entry.people.map(p => `[[${p}]]`).join(', ')}`);
-        }
-
-        // Lazy body loading & Markdown rendering
-        void (async () => {
-            const bodyText = await this.plugin.index.ensureEntryBodyLoaded(entry);
-            const cacheKey = `${entry.filePath}_${entry.modified}`;
-            const cachedEl = this.getCachedRenderedBody(cacheKey);
-
-            if (cachedEl) {
-                bodyEl.empty();
-                bodyEl.appendChild(cachedEl);
-            } else if (this._streamComponent) {
-                const tempDiv = document.createElement('div');
-                await MarkdownRenderer.render(this.app, bodyText, tempDiv, entry.filePath, this._streamComponent);
-                this.setCachedRenderedBody(cacheKey, tempDiv);
-                bodyEl.empty();
-                bodyEl.appendChild(tempDiv);
-            }
-
-            // Update word count in footer
-            wordInfo.setText(`${entry.wordCount || bodyText.trim().split(/\s+/).length} words · ${entry.readingTimeMin || 1} min reflection`);
-        })();
     }
 
-    private renderInlineEditor(leaf: HTMLElement, entry: JournalEntry): void {
-        leaf.empty();
-        leaf.addClass('is-editing');
+    private renderEntryMarkdown(bodyEl: HTMLElement, entry: JournalEntry): void {
+        const cacheKey = `${entry.filePath}_${entry.modified}`;
+        const cached = this.getCachedRenderedBody(cacheKey);
 
-        const textarea = leaf.createEl('textarea', {
-            cls: 'pos-inline-edit-textarea',
-            value: entry.body,
+        if (cached) {
+            bodyEl.empty();
+            while (cached.firstChild) {
+                bodyEl.appendChild(cached.firstChild);
+            }
+            this.attachInteractiveElements(bodyEl, entry);
+        } else {
+            void (async () => {
+                const bodyText = await this.plugin.index.ensureEntryBodyLoaded(entry);
+                if (this._streamComponent) {
+                    bodyEl.empty();
+                    await MarkdownRenderer.render(this.app, bodyText, bodyEl, entry.filePath, this._streamComponent);
+                    // Cache clones of the children for instant re-render without extra wrapper divs
+                    const cacheFrag = document.createElement('div');
+                    for (let i = 0; i < bodyEl.childNodes.length; i++) {
+                        cacheFrag.appendChild(bodyEl.childNodes[i].cloneNode(true));
+                    }
+                    this.setCachedRenderedBody(cacheKey, cacheFrag);
+                    this.attachInteractiveElements(bodyEl, entry);
+                }
+            })();
+        }
+    }
+
+    private attachInteractiveElements(container: HTMLElement, entry: JournalEntry): void {
+        // 1. Task Checkboxes (Live In-Place Toggling with Optimistic Strike-Through)
+        const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+        checkboxes.forEach((cb, idx) => {
+            cb.disabled = false;
+            cb.addClass('pos-interactive-checkbox');
+
+            const listItem = cb.closest('li');
+            if (listItem) {
+                listItem.toggleClass('is-checked', cb.checked);
+                listItem.setAttribute('data-task', cb.checked ? 'x' : ' ');
+            }
+
+            const cleanLiText = listItem ? (listItem.textContent || '').replace(/^\[[ xX]\]\s*/, '').trim() : '';
+            const matchedTask = entry.tasks ? (entry.tasks.find(t => t.title && cleanLiText && (cleanLiText.includes(t.title) || t.title.includes(cleanLiText))) || entry.tasks[idx]) : undefined;
+
+            cb.onclick = async (e) => {
+                e.stopPropagation();
+                const isChecked = cb.checked;
+
+                if (listItem) {
+                    listItem.toggleClass('is-checked', isChecked);
+                    listItem.setAttribute('data-task', isChecked ? 'x' : ' ');
+                }
+
+                if (matchedTask) {
+                    matchedTask.completed = isChecked;
+                }
+
+                this.invalidateRenderCacheForFile(entry.filePath);
+                this._taskPending++;
+                try {
+                    const lineIdx = matchedTask ? matchedTask.lineIndex : -1;
+                    const taskTitle = matchedTask ? matchedTask.title : (cleanLiText || undefined);
+                    await this.plugin.capture.toggleTaskInFile(entry.filePath, lineIdx, isChecked, taskTitle);
+                } catch (err) {
+                    cb.checked = !isChecked;
+                    if (listItem) {
+                        listItem.toggleClass('is-checked', !isChecked);
+                        listItem.setAttribute('data-task', !isChecked ? 'x' : ' ');
+                    }
+                    new Notice('Failed to toggle task');
+                } finally {
+                    this._taskPending--;
+                }
+            };
         });
 
-        attachInlineTriggers(this.app, textarea);
+        // 2. Image Click to Zoom (Lightbox)
+        const images = container.querySelectorAll<HTMLImageElement>('img');
+        images.forEach(img => {
+            img.addClass('pos-stream-zoomable-img');
+            img.onclick = (e) => {
+                e.stopPropagation();
+                new ImageLightboxModal(this.app, { src: img.src, alt: img.alt, openerEl: img }).open();
+            };
+        });
+
+        // 3. Privacy Shield click-to-reveal
+        container.onclick = (e) => {
+            if (this._isPrivacyShieldActive) {
+                e.stopPropagation();
+                container.classList.toggle('is-unblurred');
+            }
+        };
+    }
+
+    private renderInlineEditor(parent: HTMLElement, entry: JournalEntry): void {
+        parent.empty();
+        const textarea = parent.createEl('textarea', {
+            cls: 'pos-inline-edit-textarea',
+            value: entry.body
+        });
+
+        attachInlineTriggers(this.app, textarea, undefined, undefined, () => this.plugin.getContexts(), this.plugin.settings?.peopleFolder);
         attachMediaPasteHandler(this.app, textarea, () => this.plugin.settings?.attachmentsFolder || '000 Bin/Handumanan Attachments');
 
-        const btnRow = leaf.createDiv({ cls: 'pos-inline-edit-btns' });
+        const btnRow = parent.createDiv({ cls: 'pos-inline-edit-btns' });
         const saveBtn = btnRow.createEl('button', { cls: 'pos-action-btn pos-btn-primary', text: 'Save' });
         const cancelBtn = btnRow.createEl('button', { cls: 'pos-action-btn', text: 'Cancel' });
 
@@ -917,56 +1507,71 @@ export class DesktopHubView extends ItemView {
             await this.plugin.capture.updateNoteContent(entry.filePath, val);
             entry.body = val;
             this.invalidateRenderCacheForFile(entry.filePath);
+            this._editingEntryId = null;
             this.updateStreamOnly();
         };
 
         cancelBtn.onclick = () => {
             if (textarea.value.trim() !== entry.body.trim()) {
-                const confirmDiscard = window.confirm('Discard unsaved edits to this reflection?');
-                if (!confirmDiscard) return;
+                if (!window.confirm('Discard unsaved edits?')) return;
             }
+            this._editingEntryId = null;
             this.updateStreamOnly();
         };
     }
 
-    private setupInfiniteScroll(container: HTMLElement, totalCount: number): void {
-        if (this._intersectionObserver) {
-            this._intersectionObserver.disconnect();
-        }
+    private openNoteActionMenu(e: MouseEvent, entry: JournalEntry): void {
+        const menu = new Menu();
 
-        if (this._renderedCount >= totalCount) return;
-
-        // Ensure single sentinel at container bottom
-        if (this._scrollSentinelEl) {
-            this._scrollSentinelEl.remove();
-        }
-        this._scrollSentinelEl = container.createDiv({ cls: 'pos-scroll-sentinel' });
-
-        this._intersectionObserver = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting && !this._isLoadingMore) {
-                if (this._renderedCount < totalCount) {
-                    this._isLoadingMore = true;
-                    const filtered = this.getFilteredCaptures();
-                    const from = this._renderedCount;
-                    const to = Math.min(totalCount, from + BATCH_SIZE);
-                    const nextBatch = filtered.slice(from, to);
-
-                    // Move sentinel before appending next batch
-                    this._scrollSentinelEl?.remove();
-                    this.appendBatch(container, nextBatch);
-                    this._renderedCount = to;
-
-                    if (this._renderedCount < totalCount && this._scrollSentinelEl) {
-                        container.appendChild(this._scrollSentinelEl);
+        menu.addItem((item) => {
+            item.setTitle('Open Note File')
+                .setIcon('file-text')
+                .onClick(async () => {
+                    const file = this.app.vault.getAbstractFileByPath(entry.filePath);
+                    if (file instanceof TFile) {
+                        await this.app.workspace.getLeaf(false).openFile(file);
                     }
-                    this._isLoadingMore = false;
-                }
-            }
-        }, { rootMargin: '300px' });
+                });
+        });
 
-        if (this._scrollSentinelEl) {
-            this._intersectionObserver.observe(this._scrollSentinelEl);
-        }
+        menu.addItem((item) => {
+            item.setTitle(entry.favorite ? 'Unstar Note' : 'Star Note')
+                .setIcon('star')
+                .onClick(async () => {
+                    const newState = await this.plugin.capture.toggleNoteImportance(entry.filePath);
+                    entry.favorite = newState;
+                    entry.pinned = newState;
+                    this.invalidateRenderCacheForFile(entry.filePath);
+                    this.updateStreamOnly();
+                    if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
+                });
+        });
+
+        menu.addItem((item) => {
+            item.setTitle('Edit Note')
+                .setIcon('pencil')
+                .onClick(() => {
+                    this._editingEntryId = entry.id;
+                    this.updateStreamOnly();
+                });
+        });
+
+        menu.addSeparator();
+
+        menu.addItem((item) => {
+            item.setTitle('Delete Note')
+                .setIcon('trash-2')
+                .setWarning(true)
+                .onClick(async () => {
+                    if (window.confirm('Move note to trash?')) {
+                        await this.plugin.capture.deleteNote(entry.filePath);
+                        this.updateStreamOnly();
+                        new Notice('Note deleted');
+                    }
+                });
+        });
+
+        menu.showAtMouseEvent(e);
     }
 
     private updateStreamOnly(): void {

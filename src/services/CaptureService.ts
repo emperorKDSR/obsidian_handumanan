@@ -179,6 +179,57 @@ export class CaptureService {
     }
 
     /**
+     * Toggles note importance / star flag using processFrontMatter.
+     */
+    async toggleNoteImportance(filePath: string): Promise<boolean> {
+        return this.toggleFavorite(filePath);
+    }
+
+    /**
+     * Toggles a task checkbox in a markdown file in-place
+     */
+    async toggleTaskInFile(
+        filePath: string,
+        lineIndex: number,
+        completed: boolean,
+        taskTitleFallback?: string
+    ): Promise<void> {
+        const file = this.app.vault.getAbstractFileByPath(filePath);
+        if (!(file instanceof TFile)) {
+            throw new Error(`[CaptureService] File not found: ${filePath}`);
+        }
+
+        await this.app.vault.process(file, (content) => {
+            const isCrlf = content.includes('\r\n');
+            const newline = isCrlf ? '\r\n' : '\n';
+            const lines = content.split(/\r?\n/);
+
+            let targetLineIdx = -1;
+            const parentTaskRegex = /^(\s*-\s*\[)([ xX])(\]\s+.*)$/;
+
+            if (lineIndex >= 0 && lineIndex < lines.length && parentTaskRegex.test(lines[lineIndex])) {
+                targetLineIdx = lineIndex;
+            } else if (taskTitleFallback) {
+                const cleanFallback = taskTitleFallback.replace(/📅\s*\d{4}-\d{2}-\d{2}/g, '').trim();
+                for (let i = 0; i < lines.length; i++) {
+                    if (parentTaskRegex.test(lines[i]) && lines[i].includes(cleanFallback)) {
+                        targetLineIdx = i;
+                        break;
+                    }
+                }
+            }
+
+            if (targetLineIdx !== -1) {
+                const oldLine = lines[targetLineIdx];
+                const marker = completed ? 'x' : ' ';
+                lines[targetLineIdx] = oldLine.replace(/^(\s*-\s*\[)[ xX](\])/, `$1${marker}$2`);
+            }
+
+            return lines.join(newline);
+        });
+    }
+
+    /**
      * Sends a note safely to trash using Obsidian native trash
      */
     async deleteNote(filePath: string): Promise<void> {

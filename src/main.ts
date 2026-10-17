@@ -70,14 +70,14 @@ export default class HandumananPlugin extends Plugin {
         // Add Ribbon & Command Icons
         addIcon(DESKTOP_HUB_ICON_ID, DESKTOP_HUB_ICON_SVG);
 
-        this.addRibbonIcon(DESKTOP_HUB_ICON_ID, 'Handumanan Journal', () => {
+        this.addRibbonIcon(DESKTOP_HUB_ICON_ID, 'Handumanan', () => {
             void this.activateWorkspace();
         });
 
-        // Primary Journal Commands
+        // Primary Commands
         this.addCommand({
             id: 'handumanan-open-journal',
-            name: 'Open Handumanan Life Journal',
+            name: 'Open Handumanan',
             icon: DESKTOP_HUB_ICON_ID,
             callback: () => { void this.activateWorkspace(); }
         });

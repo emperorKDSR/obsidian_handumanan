@@ -299,6 +299,21 @@ export class IndexService {
         const wordCount = body.trim() ? body.trim().split(/\s+/).length : 0;
         const readingTimeMin = Math.max(1, Math.ceil(wordCount / 200));
 
+        // Parse markdown task checkboxes
+        const tasks: { lineIndex: number; rawLine: string; title: string; completed: boolean }[] = [];
+        const taskLines = body.split(/\r?\n/);
+        taskLines.forEach((line, idx) => {
+            const m = line.match(/^\s*-\s*\[([ xX])\]\s*(.*)$/);
+            if (m) {
+                tasks.push({
+                    lineIndex: idx,
+                    rawLine: line,
+                    completed: m[1].toLowerCase() === 'x',
+                    title: m[2].trim()
+                });
+            }
+        });
+
         const entry: JournalEntry = {
             id: file.path,
             filePath: file.path,
@@ -312,7 +327,7 @@ export class IndexService {
             prompt: frontmatter.prompt ? String(frontmatter.prompt) : undefined,
             private: Boolean(frontmatter.private),
             favorite: Boolean(frontmatter.favorite),
-            pinned: Boolean(frontmatter.pinned),
+            pinned: Boolean(frontmatter.pinned || frontmatter.important),
             tags,
             people,
             places: Array.isArray(frontmatter.places) ? frontmatter.places : [],
@@ -323,9 +338,15 @@ export class IndexService {
             wordCount,
             readingTimeMin,
             synthesized: Boolean(frontmatter.synthesized),
+            hasTasks: tasks.length > 0,
+            tasks,
         };
 
         return entry;
+    }
+
+    isImportant(entry: JournalEntry): boolean {
+        return Boolean(entry.pinned || entry.favorite || (entry as any).important);
     }
 
     /**
