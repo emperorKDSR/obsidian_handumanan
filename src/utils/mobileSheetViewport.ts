@@ -1,7 +1,6 @@
 interface MobileSheetViewportOptions {
     sheetEl: HTMLElement;
     scrollEl?: HTMLElement | null;
-    keyboardVarName?: string;
     keyboardThreshold?: number;
 }
 
@@ -10,7 +9,6 @@ const INPUT_SELECTOR = 'input:not([type="hidden"]):not([disabled]), textarea:not
 export function attachMobileSheetViewportBehavior({
     sheetEl,
     scrollEl = sheetEl,
-    keyboardVarName = '--diwa-kb-h',
     keyboardThreshold = 72,
 }: MobileSheetViewportOptions): () => void {
     const win = sheetEl.ownerDocument.defaultView;
@@ -37,6 +35,13 @@ export function attachMobileSheetViewportBehavior({
     const scrollTargetIntoView = (target?: EventTarget | null) => {
         const element = target instanceof win.HTMLElement ? target : null;
         if (!element || !sheetEl.contains(element) || !shouldScrollTarget(element)) return;
+        const rect = element.getBoundingClientRect();
+        const visibleTop = viewport?.offsetTop ?? 0;
+        const visibleBottom = Math.min(
+            viewport ? viewport.offsetTop + viewport.height : win.innerHeight,
+            win.innerHeight - readObsidianKeyboardHeight(),
+        );
+        if (rect.top >= visibleTop + 16 && rect.bottom <= visibleBottom - 16) return;
         element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     };
 
@@ -50,18 +55,19 @@ export function attachMobileSheetViewportBehavior({
         });
     };
 
-    const syncKeyboardOffset = () => {
-        let keyboardHeight = 0;
-        if (viewport) {
-            keyboardHeight = Math.max(
-                0,
-                Math.round(win.innerHeight - (viewport.height + viewport.offsetTop)),
-            );
-        }
-        if (keyboardHeight < keyboardThreshold) keyboardHeight = 0;
-        sheetEl.style.setProperty(keyboardVarName, `${keyboardHeight}px`);
-        sheetEl.toggleClass('has-mobile-keyboard', keyboardHeight > 0);
-        if (keyboardHeight > 0) scheduleScrollIntoView();
+    const readObsidianKeyboardHeight = (): number => {
+        const raw = win.getComputedStyle(win.document.documentElement).getPropertyValue('--keyboard-height');
+        return Math.max(0, parseFloat(raw) || 0);
+    };
+
+    const syncKeyboardState = () => {
+        const viewportKeyboardHeight = viewport
+            ? Math.max(0, Math.round(win.innerHeight - (viewport.height + viewport.offsetTop)))
+            : 0;
+        const keyboardOpen = viewportKeyboardHeight >= keyboardThreshold
+            || readObsidianKeyboardHeight() >= keyboardThreshold;
+        sheetEl.toggleClass('has-mobile-keyboard', keyboardOpen);
+        if (keyboardOpen) scheduleScrollIntoView();
     };
 
     const handleFocusIn = (event: FocusEvent) => {
@@ -69,23 +75,25 @@ export function attachMobileSheetViewportBehavior({
     };
 
     const handleViewportChange = () => {
-        syncKeyboardOffset();
+        syncKeyboardState();
     };
 
+    const keyboardEvents = ['keyboardWillShow', 'keyboardDidShow', 'keyboardWillHide', 'keyboardDidHide'];
     sheetEl.addEventListener('focusin', handleFocusIn, true);
     win.addEventListener('resize', handleViewportChange);
     viewport?.addEventListener('resize', handleViewportChange);
     viewport?.addEventListener('scroll', handleViewportChange);
+    keyboardEvents.forEach(name => win.addEventListener(name, handleViewportChange));
 
-    syncKeyboardOffset();
+    syncKeyboardState();
 
     return () => {
         clearPendingScroll();
+        keyboardEvents.forEach(name => win.removeEventListener(name, handleViewportChange));
         sheetEl.removeEventListener('focusin', handleFocusIn, true);
         win.removeEventListener('resize', handleViewportChange);
         viewport?.removeEventListener('resize', handleViewportChange);
         viewport?.removeEventListener('scroll', handleViewportChange);
-        sheetEl.style.removeProperty(keyboardVarName);
         sheetEl.removeClass('has-mobile-keyboard');
     };
 }

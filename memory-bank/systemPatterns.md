@@ -1,7 +1,7 @@
-# System Patterns: Handumanan — Life Journaling OS Architecture
+# System Patterns: Handumanan Journal Architecture
 
 ## 1. Tech Stack & Dependencies
-*   **Compilation**: Compiled via `esbuild.config.mjs` from `src/main.ts` into a single file `main.js`, with style declarations in `styles.css`. Builds are deployed to `/Users/K26/Obsidian/K0000/.obsidian/plugins/handumanan`.
+*   **Compilation**: Compiled via `esbuild.config.mjs` from `src/main.ts` into a single file `main.js`, with style declarations in `styles.css`. Copy `main.js`, `manifest.json`, and `styles.css` to `<vault>/.obsidian/plugins/handumanan/` after building; the build does not deploy automatically.
 *   **TypeScript**: Targeted at `ESNext` modules with strict type checks.
 *   **Dependencies**: Obsidian API, `chrono-node` for natural-language dates.
 
@@ -9,7 +9,7 @@
 
 ## 2. Core Service Architecture
 
-Handumanan uses an event-driven, production-grade journaling architecture:
+Handumanan uses an event-driven journal architecture:
 
 ```mermaid
 flowchart TD
@@ -18,13 +18,13 @@ flowchart TD
     end
 
     subgraph Service Layer
-        Cap[src/services/CaptureService.ts - Atomic Journal Entries & ProcessFrontMatter]
+        Cap[src/services/CaptureService.ts - Journal Entries & ProcessFrontMatter]
         Index[src/services/IndexService.ts - MetadataCache Startup & O1 Sorted Cache]
         Ref[src/application/RefreshCoordinator.ts - Debounced Refresh Dispatcher]
     end
 
     subgraph User Interface Layer
-        Hub[src/views/DesktopHubView.ts - Decoupled Composer & Append-Only Stream]
+        Hub[src/views/DesktopHubView.ts - Decoupled Composer & Bounded Pages]
         MergeModal[src/modals/MergeNotesModal.ts - Weave Entries Modal]
         SuggestModals[src/modals/ - Person, File, Context Suggest Modals]
         Settings[src/settings.ts - HandumananSettingTab]
@@ -45,16 +45,16 @@ flowchart TD
 
 ### Capture Service (`src/services/CaptureService.ts`)
 *   Manages atomic note creation in `<journalFolder>/YYYY/MM/YYYY-MM-DD HH.mm.ss.md` (default: `000 Bin/Handumanan/`).
-*   Uses Obsidian's official `this.app.fileManager.processFrontMatter` for atomic, crash-safe YAML mutations (`updateNoteContent`, `toggleFavorite`).
+*   Edits use `app.vault.process` for one read-modify-write of frontmatter and body, preserving untouched YAML text. A per-file queue orders plugin-origin edits, keepsake toggles, deletes, and weave mutations. The inline editor compares the body it opened against the current body and rejects changed content instead of overwriting it; external editors and sync tools still require testing.
 *   In-memory collision protection via `app.vault.getAbstractFileByPath` (eliminating TOCTOU adapter races).
-*   Zero-data-loss draft persistence with 300ms debounce to eliminate keystroke I/O lag.
+*   Debounced local draft persistence (300ms) reduces writes while typing; this is not a guarantee against all data loss.
 *   Pebble-Drop support: allows recording 1-tap presence check-ins when depleted.
 *   Multi-entry weaving (`mergeNotes`) with provenance tracking (`wovenInto: [[Target]]`, `synthesized: true`) and non-destructive retention of atomic entries by default.
 
 ### Index Service (`src/services/IndexService.ts`)
-*   Instantaneous startup via `this.app.metadataCache.getFileCache(file)`, bypassing disk reads for 10,000+ notes.
-*   Secondary lookup maps with zero memory leaks (`_entriesByDay`, `_entriesByPerson`, `_entriesByMood`), cleanly evicted on note updates.
-*   Cached O(1) sorted entry retrieval via `_isSortedDirty` dirty flag.
+*   Startup uses `this.app.metadataCache.getFileCache(file)` where available and falls back to disk reads in batches of at most 16. A synthetic metadata-only 10,000-entry test records indexing time, but actual Obsidian device/vault performance remains unmeasured.
+*   Secondary lookup maps (`_entriesByDay`, `_entriesByPerson`, `_entriesByMood`) are updated on note changes. Out-of-order reads are discarded by per-file generations; failed reads retain the last valid entry.
+*   Sorted entry retrieval is cached behind an `_isSortedDirty` dirty flag; rebuilding the sorted array still has a cost.
 *   Psychological safety: `getOnThisDayEntries()` and `getRandomMemory()` automatically exclude `private: true` or `type: 'unburdening'` to prevent accidental exposure of raw grief or confidential thoughts.
 
 ### Refresh Coordinator (`src/application/RefreshCoordinator.ts`)
@@ -67,9 +67,9 @@ flowchart TD
 
 The primary interactive hub operates in two complementary psychological states:
 1.  **River Mode (Reading & Reflection)**:
-    *   Centered editorial container clamped to `min(68ch, calc(100vw - 32px))`.
+    *   Full-width container that fills the available Obsidian pane with responsive desktop, tablet, and mobile padding.
     *   Relaxed line height (`1.72`) and organic spacing.
-    *   Append-only infinite scrolling (zero DOM destructions when loading older batches).
+    *   Bounded 25-entry pagination with Older/Newer controls to prevent unbounded stream DOM growth.
     *   Hairline day dividers ("Today · September 27", "Yesterday").
     *   Borderless journal leaves with time of day, mood badges, word count, and reading time.
 2.  **Sanctuary Mode (Deep Writing)**:
@@ -79,9 +79,14 @@ The primary interactive hub operates in two complementary psychological states:
     *   Composer elevates with fluid vertical expansion up to 55vh.
     *   Circadian prompt decks automatically align with the hour (Morning Awakening, Midday Grounding, Evening Unburdening).
 3.  **Privacy Shield Mode**:
-    *   Toggled via `⌘+Shift+P` or header eye icon.
+    *   Toggled via the command palette or header eye icon; users may assign a hotkey in Obsidian.
     *   Blurs reflection text (`filter: blur(9px)`) against shoulder-surfing and screen shares.
-    *   Strict click-to-reveal only (no accidental mouse hover unblur).
+    *   Reveals text through an explicit per-entry button, not hover. The blur does not encrypt or restrict access to Markdown files.
 4.  **Temporal Scrubber**:
     *   Fast filters: `📖 All Journal`, `📅 Today`, `✨ On This Day`, `❤️ Keepsakes`, `🌧️ Unburdening`.
     *   Theme-adaptive WCAG AA contrast tokens for light and dark themes.
+5.  **Phone Capture Dock**:
+    *   `Platform.isMobile && !isTablet(app)` sets `is-phone-layout` on the journal container; phone CSS follows this state rather than treating exactly 768px as a phone.
+    *   The persistent bottom composer keeps its draft textarea mounted, places Record beside the input, and places mood choices and private-entry control in a scrollable secondary row. Search hides the composer and filters as before.
+    *   Header Search and Privacy Shield remain direct controls; an Obsidian `Menu` houses Sanctuary, Recall, Select, and Settings on phones. Desktop/tablet retain the top composer and direct header actions.
+    *   With the keyboard open, the outer workspace root remains the sole vertical scroller. The inner phone container uses `overflow: visible !important` (overriding its `overflow-x: hidden !important` rule), `flex: 0 0 auto`, and `min-height: 100%`; the stream cannot shrink to zero. Obsidian already resizes its mobile container, so do not subtract keyboard height from the root or force `100dvh`. The viewport helper detects `--keyboard-height` as well as visual viewport changes and only scrolls an input if it is obscured.

@@ -1,14 +1,16 @@
-# Progress: Handumanan — Life Journaling OS
+# Progress: Handumanan Journal
 
-## Current State: Production Hardened & Deployed (100% Green)
-* [x] Forked and renamed from `obsidian_diwa` to `handumanan`
-* [x] Transformed core philosophy into an intimate, distraction-free **Life Journaling Operating System**
-* [x] Conducted 360-degree review with UX, critic, PKM, and system architects
-* [x] Executed production-grade hardening roadmap across data safety, performance, PKM, and UI
-* [x] Compiled bundle with zero errors (`npm run build`)
-* [x] Deployed bundle (`main.js`, `manifest.json`, `styles.css`) to `/Users/K26/Obsidian/K0000/.obsidian/plugins/handumanan/`
+## Implemented in source
+- [x] Local-first Markdown journal capture and year/month storage.
+- [x] Responsive journal composer and chronological stream with search and filters.
+- [x] Local draft persistence, mood check-ins, circadian prompts, and Sanctuary mode.
+- [x] Keepsakes, Privacy Shield visual blur, selective memory resurfacing, and note weaving with provenance.
+- [x] Bounded stream pagination and metadata-backed entry indexing.
 
----
+## Documentation alignment
+- [x] Reframe README, project memory, and plugin metadata around the journal-only product.
+- [x] Remove obsolete DIWA release logs and design document.
+- [x] Reassess journal-plugin maturity and best-in-class claims through product, UI, UX, and system debate: functionally mature with qualifications; not best-in-class.
 
 ## Production-Grade Hardening Checklist
 
@@ -20,7 +22,7 @@
 * [x] **Safe Deletion**: Added confirmation dialog on Trash icon and confirmation on discarding inline edits.
 
 ### 2. Scale & Scroll Performance (10k+ Notes) (P0/P1)
-* [x] **Zero-Disk Startup via MetadataCache**: Replaced sequential `vault.read()` startup loop with `app.metadataCache.getFileCache()`, dropping startup time from 30+ seconds to <100ms.
+* [x] **Zero-Disk Startup via MetadataCache**: Replaced sequential `vault.read()` startup loop with `app.metadataCache.getFileCache()`, dropping startup time for large vaults from 30+ seconds to <100ms.
 * [x] **Append-Only Infinite Stream**: Eliminated quadratic DOM teardowns on scroll batching; only new items are appended.
 * [x] **LRU Markdown Render Cache**: Wired up `_renderedMarkdownCache` to prevent re-parsing Markdown on scroll or filter updates.
 * [x] **O(1) Sorted Entry Cache**: Replaced repeated O(N log N) sorts in `IndexService` with dirty-flag caching.
@@ -41,3 +43,10 @@
 * [x] **Design Tokens & Native Lucide Icons**: Strictly calibrated tokens (`--diwa-radius: 12px`, `--diwa-radius-pill: 9999px`, `--diwa-shadow`, `--diwa-stream-max-width`) and native Obsidian Lucide icons via `setIcon(el, iconId)`.
 * [x] **Sanctuary Mode & Privacy Shield**: Preserved distraction-free writing state and click-to-reveal privacy shield while aligning with `obsidian_diwa`'s minimalist design system.
 * [x] **Stream Row Typographic Baseline Alignment**: Fixed vertical misalignment between timestamp and first row of note text via `align-items: baseline !important;`, direct Markdown rendering into `bodyEl`, and zero-margin resets on first children.
+
+### 5. Mobile Ergonomics & Verification
+* [x] Surface inline-edit failures, prevent duplicate saves, retain unsaved text, and reject a stale body without overwriting external changes.
+* [x] Add service tests for edit conflicts, indexing order/failures, privacy exclusions, and synthetic 10k-entry metadata startup.
+* [x] Port the DIWA iPhone keyboard gap fix: preserve the outer root scroller, prevent inner stream collapse, and detect Obsidian keyboard state.
+* [x] Deploy bundle (`main.js`, `manifest.json`, `styles.css`) to `/Users/K26/Obsidian/K0000/.obsidian/plugins/handumanan/`.
+* [ ] Measure and inspect live Obsidian behavior on desktop/mobile, multiple themes, and large vaults.

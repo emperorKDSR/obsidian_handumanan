@@ -91,12 +91,6 @@ You work alongside the main ui-ux-designer. When you find conflicts between mobi
 
 ---
 
-## DIWA-Specific Mobile Context
+## Handumanan mobile context
 
-DIWA uses `Platform.isMobile` (Obsidian API) combined with a custom `isTablet()` utility for layout switching:
-- `Platform.isMobile` — true on both phones and tablets in Obsidian Mobile
-- `isTablet()` — DIWA-specific heuristic (`window.innerWidth >= 768`) used to differentiate tablet from phone layouts within the mobile plugin context
-
-For phone-specific layouts (non-tablet mobile), `isTablet()` returns false. Ensure touch targets, navigation footer, and capture bar are sized for one-handed thumb use on narrow screens.
-
-The ZenCaptureModal uses bottom-sheet positioning on mobile — do not alter this pattern without testing on actual narrow-screen viewports.
+The mobile journal uses `DesktopHubView` with a sticky composer, search toggle, and keyboard-aware viewport handling; review `styles.css` and `src/utils/mobileSheetViewport.ts` rather than assuming a DIWA bottom-navigation shell or `ZenCaptureModal`. Verify typing continuity, touch targets, safe areas, search transitions, and visibility when the keyboard opens.

@@ -1,20 +1,16 @@
-# Product Context: DIWA — Personal OS for Obsidian
+# Product Context: Handumanan Journal
 
-## User Persona & Experience Goals
-DIWA is designed for productivity builders, power-journalers, and knowledge workers who want a single "cockpit" inside Obsidian. The interface adapts dynamically depending on the user's platform (Desktop, Tablet, or Mobile) to minimize friction:
+## Audience and promise
+For people who want to record everyday experiences and difficult feelings without turning reflection into a productivity dashboard. The first-use path is: open the journal from the ribbon or command palette, write an entry, then return to the stream to reread or search it. Users can configure a shortcut in Obsidian Hotkeys; no shortcut for opening capture ships by default.
 
-*   **Frictionless Capture**: Quick capture via `⌘K` or `Ctrl+K` allows saving thoughts or gawa (tasks) instantly without losing context.
-*   **Structured Action (Gawa)**: Tasks are grouped by logical categories (Open, Done, Waiting, Someday) rather than just flat lists.
-*   **Financial Visibility (Bulsa)**: Tracks recurring payments (dues) so the user doesn't miss payments, while providing light analytics (Bulsa Insights) on cashflow.
-*   **Continuous Reflection (Review & Journal)**: Keeps journaling and weekly intention-setting tight and easily accessible.
+## Experience principles
+- **Gentle capture:** Optional circadian prompts and mood-only check-ins lower the effort needed to begin; drafts persist locally while writing.
+- **Calm recall:** Chronological entries, day dividers, search, keepsakes, and intentional resurfacing support reflection without requiring an elaborate taxonomy.
+- **Emotional safety:** Private and unburdening entries do not randomly resurface. Privacy Shield blurs on-screen text but must never be described as securing the underlying files.
+- **Obsidian-native portability:** Keep entries as editable Markdown with frontmatter and use theme tokens and native interactions where possible.
+- **Accessible across devices:** Responsive layout must support keyboard, touch, and assistive technology; current keyboard and reduced-motion gaps remain open.
 
-## Terminology
-*   **Gawa**: Tasks or items of action.
-*   **Bulsa**: Financial entries, recurring ledger items, and cashflow details.
-*   **Thoughts**: Unstructured inputs or notes captured quickly, which can later be converted to tasks.
-*   **Review**: Weekly progress tracking and scheduling.
+## Terms
+**Entry** is a Markdown reflection. **Keepsake** is a favorited entry. **Unburdening** is a sensitive journal entry excluded from random resurfacing. **Sanctuary** is the focused writing state. **Privacy Shield** is a visual blur within the plugin view.
 
-## Design Philosophy
-*   **Clean and Responsive**: Full responsiveness with customized workspace shells.
-*   **Obsidian Native**: Inherits system themes, font families, and colors perfectly.
-*   **Fluid Transitions**: Minimal, polished CSS rules for layout navigation.
+Task management, finance, and formal weekly planning are outside the product scope.

@@ -46,7 +46,7 @@ If checks fail, block work and return precise remediation steps.
 3. **Versioning governance gate**
    - Enforce the required convention: **`major.minor.patch-prerelease`**.
    - Canonical version format:
-     - Stable: `<major>.<minor>.<patch>` (example: `11.1.0`)
+     - Stable: `<major>.<minor>.<patch>` (example: `1.0.0`)
      - Prerelease: `<major>.<minor>.<patch>-<prerelease>.<n>` (example: `11.2.0-beta.1`)
    - Allowed channels: `alpha`, `beta`, `rc`.
    - Required regex: `^\d+\.\d+\.\d+(-(alpha|beta|rc)\.\d+)?$`

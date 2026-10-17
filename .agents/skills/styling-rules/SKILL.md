@@ -9,7 +9,7 @@ Use this skill when modifying the user interface layout, typography, or color de
 
 ## 1. Class Namespacing
 To avoid conflicts with Obsidian core sheets or other community themes:
-*   Always prefix custom element classes with `pos-` (Personal OS) or `diwa-` (e.g. `.pos-dashboard-grid`, `.diwa-task-row`).
+*   Use the existing `pos-` prefix for new journal element classes (e.g. `.pos-journal-leaf`).
 *   Avoid naked selectors like `button`, `input`, `textarea`, or generic classes like `.title`, `.active`, `.hidden`. Wrap them within their parent component container (e.g. `.pos-sidebar .active`).
 
 ---
@@ -29,12 +29,12 @@ Never hardcode light/dark hex colors. Always reference Obsidian's CSS custom pro
 
 Example pattern:
 ```css
-.pos-task-card {
+.pos-journal-leaf {
     background-color: var(--background-secondary);
     border: 1px solid var(--border-color);
     color: var(--text-normal);
 }
-.pos-task-card:hover {
+.pos-journal-leaf:hover {
     border-color: var(--interactive-accent);
 }
 ```
@@ -43,8 +43,7 @@ Example pattern:
 
 ## 3. Responsive Breakpoints
 Ensure layout adjustments are tested for multiple viewports:
-*   **Desktop**: Width >= 1025px. Use sidebars and three-column grids.
-*   **Tablet**: Width between 769px and 1024px. Use dense layout grids.
-*   **Mobile**: Width <= 768px. Stack components vertically and utilize bottom-navigation shell styles.
+*   **Desktop / tablet**: Keep the journal composer and reading stream usable in both wide and narrow Obsidian panes.
+*   **Mobile**: Keep the composer accessible above the virtual keyboard and respect safe areas.
 
-Check stylesheet declarations in [`styles.css`](file:///Users/K26/Development/diwa/styles.css) for existing `@media` blocks.
+Check `styles.css` for existing `@media` blocks and provide keyboard focus and reduced-motion behavior.
