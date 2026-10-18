@@ -19,6 +19,7 @@ export class DesktopHubView extends ItemView {
     private _filterBarEl: HTMLElement | null = null;
     private _selectionBarEl: HTMLElement | null = null;
     private _headerBarEl: HTMLElement | null = null;
+    private _composerSlotEl: HTMLElement | null = null;
     private _composerEl: HTMLElement | null = null;
     private _composerTextarea: HTMLTextAreaElement | null = null;
     private _composerSubmitBtn: HTMLButtonElement | null = null;
@@ -33,6 +34,7 @@ export class DesktopHubView extends ItemView {
     private _selectionMode: boolean = false;
     private _editingEntryId: string | null = null;
     private _mobileSearchOpen: boolean = false;
+    private _searchOpen: boolean = false;
     private _mobileComposerOpen: boolean = false;
     private _desktopComposerExpanded: boolean = false;
     private _viewportCleanup: (() => void) | null = null;
@@ -137,8 +139,8 @@ export class DesktopHubView extends ItemView {
             if (this._mobileComposerOpen && this._composerEl) {
                 if (!this._composerEl.contains(target) && !target.closest('.modal, .pos-modal, .suggestion-container, .menu, .suggestion-item')) {
                     this._mobileComposerOpen = false;
-                    if (this._containerEl) {
-                        this.renderComposer(this._containerEl, true);
+                    if (this._composerSlotEl) {
+                        this.renderComposer(this._composerSlotEl, true);
                     }
                 }
             }
@@ -183,6 +185,7 @@ export class DesktopHubView extends ItemView {
         this._renderedMarkdownCache.clear();
         this._containerEl = null;
         this._headerBarEl = null;
+        this._composerSlotEl = null;
         this._composerEl = null;
         this._streamContainerEl = null;
         this._filterBarEl = null;
@@ -212,22 +215,19 @@ export class DesktopHubView extends ItemView {
                     this.updateStreamOnly();
                     return;
                 }
-                if (this._searchQuery) {
+                if (this._searchQuery || this._searchOpen) {
                     this._searchQuery = '';
+                    this._searchOpen = false;
                     this.updateStreamOnly();
-                    const searchInput = this.contentEl.querySelector('.pos-search-input') as HTMLInputElement | null;
-                    if (searchInput) {
-                        searchInput.value = '';
-                        searchInput.blur();
-                    }
+                    if (this._headerBarEl) this.renderHeaderBar(this._headerBarEl);
                     return;
                 }
                 if (this._desktopComposerExpanded) {
                     const textarea = this._composerEl?.querySelector('textarea');
                     if (!textarea || !textarea.value.trim()) {
                         this._desktopComposerExpanded = false;
-                        if (this._containerEl) {
-                            this.renderComposer(this._containerEl, false);
+                        if (this._composerSlotEl) {
+                            this.renderComposer(this._composerSlotEl, false);
                         }
                         if (textarea) textarea.blur();
                         return;
@@ -246,6 +246,10 @@ export class DesktopHubView extends ItemView {
             // Hotkey: '/' or 'Cmd+F' -> Focus search
             if (e.key === '/' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f')) {
                 e.preventDefault();
+                if (!this._searchOpen && this._headerBarEl) {
+                    this._searchOpen = true;
+                    this.renderHeaderBar(this._headerBarEl);
+                }
                 const searchInput = this.contentEl.querySelector('.pos-search-input') as HTMLInputElement | null;
                 if (searchInput) {
                     searchInput.focus();
@@ -258,8 +262,8 @@ export class DesktopHubView extends ItemView {
             if (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'n') {
                 e.preventDefault();
                 this._desktopComposerExpanded = true;
-                if (this._containerEl) {
-                    this.renderComposer(this._containerEl, false);
+                if (this._composerSlotEl) {
+                    this.renderComposer(this._composerSlotEl, false);
                 }
                 const textarea = this._composerEl?.querySelector('textarea');
                 if (textarea) {
@@ -277,9 +281,9 @@ export class DesktopHubView extends ItemView {
 
     public focusComposer(): void {
         this._desktopComposerExpanded = true;
-        if (this._containerEl) {
+        if (this._composerSlotEl) {
             const isMobile = Platform.isMobile && !isTablet(this.app);
-            this.renderComposer(this._containerEl, isMobile);
+            this.renderComposer(this._composerSlotEl, isMobile);
         }
         setTimeout(() => {
             if (this._composerTextarea && this._composerTextarea.isConnected) {
@@ -324,9 +328,11 @@ export class DesktopHubView extends ItemView {
         this._selectionBarEl = selBarWrapper;
         this.updateSelectionBar();
 
-        // 4. Hero Quick Capture (Desktop at top)
+        // 4. Hero Quick Capture (Desktop at top, anchored in dedicated slot)
         if (!isMobile) {
-            this.renderComposer(container, false);
+            const composerSlot = container.createDiv({ cls: 'pos-composer-slot' });
+            this._composerSlotEl = composerSlot;
+            this.renderComposer(composerSlot, false);
         }
 
         // 5. Continuous Document Stream
@@ -336,7 +342,9 @@ export class DesktopHubView extends ItemView {
 
         // 6. Mobile Sticky / Floating Controls (at bottom)
         if (isMobile) {
-            this.renderComposer(container, true);
+            const composerSlot = container.createDiv({ cls: 'pos-composer-slot pos-mobile-composer-slot' });
+            this._composerSlotEl = composerSlot;
+            this.renderComposer(composerSlot, true);
         }
     }
 
@@ -349,8 +357,8 @@ export class DesktopHubView extends ItemView {
         titleSection.createSpan({ cls: 'pos-header-logo', text: 'Handumanan' });
         titleSection.createSpan({ cls: 'pos-header-subtitle', text: 'WORKSPACE' });
 
-        // Search Capsule (Desktop: centered bar; Mobile: conditionally visible)
-        if (!isMobile || this._mobileSearchOpen || Boolean(this._searchQuery)) {
+        // Mobile Expanded Search Container (below title row on mobile only)
+        if (isMobile && (this._mobileSearchOpen || Boolean(this._searchQuery))) {
             const searchContainer = header.createDiv({ cls: 'pos-search-container' });
             const searchInput = searchContainer.createEl('input', {
                 cls: 'pos-search-input',
@@ -368,90 +376,72 @@ export class DesktopHubView extends ItemView {
                 }, 150);
             };
 
-            if (this._searchQuery || isMobile) {
-                const clearBtn = searchContainer.createSpan({
-                    cls: 'pos-search-clear',
-                    text: '✕',
+            const clearBtn = searchContainer.createSpan({
+                cls: 'pos-search-clear',
+                text: '✕',
+                attr: { 'aria-label': 'Clear search' }
+            });
+            clearBtn.onclick = () => {
+                this._searchQuery = '';
+                this._mobileSearchOpen = false;
+                this._renderedCount = BATCH_SIZE;
+                this.renderHeaderBar(header);
+                this.updateStreamOnly();
+            };
+        }
+
+        // Action Buttons Row (Single Row on Desktop/Tablet)
+        const actions = header.createDiv({ cls: 'pos-header-actions' });
+
+        // 1. Search (Desktop/Tablet: Icon button that expands inline in the same row; Mobile: Icon toggle)
+        if (!isMobile) {
+            if (this._searchOpen || Boolean(this._searchQuery)) {
+                const searchCapsule = actions.createDiv({ cls: 'pos-search-inline-capsule' });
+                const searchIcon = searchCapsule.createSpan({ cls: 'pos-search-inline-icon' });
+                setIcon(searchIcon, 'search');
+
+                const searchInput = searchCapsule.createEl('input', {
+                    cls: 'pos-search-input pos-search-inline-input',
+                    type: 'text',
+                    placeholder: 'Search thoughts, #tags, or tasks...',
+                    value: this._searchQuery
+                });
+
+                searchInput.oninput = () => {
+                    if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
+                    this._searchDebounceTimer = setTimeout(() => {
+                        this._searchQuery = searchInput.value.trim();
+                        this._renderedCount = BATCH_SIZE;
+                        this.updateStreamOnly();
+                    }, 150);
+                };
+
+                const closeBtn = searchCapsule.createEl('button', {
+                    cls: 'pos-search-inline-close',
                     attr: { 'aria-label': 'Clear search' }
                 });
-                clearBtn.onclick = () => {
+                setIcon(closeBtn, 'x');
+                closeBtn.onclick = () => {
                     this._searchQuery = '';
-                    if (isMobile) this._mobileSearchOpen = false;
+                    this._searchOpen = false;
                     this._renderedCount = BATCH_SIZE;
                     this.renderHeaderBar(header);
                     this.updateStreamOnly();
                 };
+            } else {
+                const searchBtn = actions.createEl('button', {
+                    cls: 'pos-icon-btn pos-search-toggle',
+                    attr: { 'aria-label': 'Search thoughts, #tags, or tasks (/)' }
+                });
+                setIcon(searchBtn, 'search');
+                searchBtn.onclick = () => {
+                    this._searchOpen = true;
+                    this.renderHeaderBar(header);
+                    const input = header.querySelector('.pos-search-input') as HTMLInputElement | null;
+                    if (input) input.focus();
+                };
             }
-        }
-
-        // Action Buttons Row
-        const actions = header.createDiv({ cls: 'pos-header-actions' });
-
-        // Sanctuary Mode toggle
-        const sanctuaryBtn = actions.createEl('button', {
-            cls: `pos-header-text-btn pos-sanctuary-btn ${this._isSanctuaryMode ? 'is-active' : ''}`,
-            text: this._isSanctuaryMode ? '✦ Sanctuary' : 'Sanctuary',
-            attr: { 'aria-label': 'Toggle Sanctuary Focus Mode' }
-        });
-        sanctuaryBtn.onclick = () => {
-            this._isSanctuaryMode = !this._isSanctuaryMode;
-            this._containerEl?.toggleClass('is-sanctuary-mode', this._isSanctuaryMode);
-            this.renderHeaderBar(header);
-            if (this._isSanctuaryMode) {
-                this._composerTextarea?.focus();
-            }
-        };
-
-        // Privacy Shield toggle (eye / eye-off)
-        const privacyBtn = actions.createEl('button', {
-            cls: `pos-icon-btn pos-privacy-toggle ${this._isPrivacyShieldActive ? 'is-active' : ''}`,
-            attr: { 'aria-label': this._isPrivacyShieldActive ? 'Disable Privacy Shield' : 'Enable Privacy Shield (Blur Reflections)' }
-        });
-        setIcon(privacyBtn, this._isPrivacyShieldActive ? 'eye-off' : 'eye');
-        privacyBtn.onclick = () => {
-            this._isPrivacyShieldActive = !this._isPrivacyShieldActive;
-            this._containerEl?.toggleClass('is-privacy-shield-active', this._isPrivacyShieldActive);
-            setIcon(privacyBtn, this._isPrivacyShieldActive ? 'eye-off' : 'eye');
-            privacyBtn.toggleClass('is-active', this._isPrivacyShieldActive);
-        };
-
-        // Resurface Serendipity button
-        const resurfaceBtn = actions.createEl('button', {
-            cls: 'pos-icon-btn pos-resurface-btn',
-            attr: { 'aria-label': 'Resurface a memory' }
-        });
-        setIcon(resurfaceBtn, 'sparkles');
-        resurfaceBtn.onclick = () => {
-            const memory = this.plugin.index.getRandomMemory();
-            if (!memory) {
-                new Notice('No memories available to resurface.');
-                return;
-            }
-            new Notice(`Resurfaced from ${moment(memory.createdAtMs).format('MMMM D, YYYY')}`);
-            this._searchQuery = memory.title;
-            this._renderedCount = BATCH_SIZE;
-            this.renderHeaderBar(header);
-            this.updateStreamOnly();
-        };
-
-        // Select & Weave Mode toggle
-        const selectBtn = actions.createEl('button', {
-            cls: `pos-header-text-btn ${this._selectionMode ? 'is-active' : ''}`,
-            text: this._selectionMode ? 'Done' : 'Select',
-            attr: { 'aria-label': this._selectionMode ? 'Exit selection mode' : 'Select entries to merge or weave' }
-        });
-        selectBtn.onclick = () => {
-            this._selectionMode = !this._selectionMode;
-            if (!this._selectionMode) {
-                this._selectedEntryIds.clear();
-            }
-            if (this._headerBarEl) this.renderHeaderBar(this._headerBarEl);
-            this.updateSelectionBar();
-            this.updateStreamOnly();
-        };
-
-        // Mobile Search Toggle
-        if (isMobile) {
+        } else {
             const searchToggleBtn = actions.createEl('button', {
                 cls: `pos-icon-btn pos-mobile-search-toggle ${this._mobileSearchOpen || this._searchQuery ? 'is-active' : ''}`,
                 attr: { 'aria-label': 'Search journal' }
@@ -468,7 +458,55 @@ export class DesktopHubView extends ItemView {
             };
         }
 
-        // Settings trigger
+        // 2. Sanctuary Mode toggle (Icon button)
+        const sanctuaryBtn = actions.createEl('button', {
+            cls: `pos-icon-btn pos-sanctuary-btn ${this._isSanctuaryMode ? 'is-active' : ''}`,
+            attr: { 'aria-label': this._isSanctuaryMode ? 'Exit Sanctuary Focus Mode' : 'Toggle Sanctuary Focus Mode' }
+        });
+        setIcon(sanctuaryBtn, 'book-open');
+        sanctuaryBtn.onclick = () => {
+            this._isSanctuaryMode = !this._isSanctuaryMode;
+            this._containerEl?.toggleClass('is-sanctuary-mode', this._isSanctuaryMode);
+            this.renderHeaderBar(header);
+            if (this._isSanctuaryMode) {
+                this._composerTextarea?.focus();
+            }
+        };
+
+        // 3. Privacy Shield toggle (eye / eye-off)
+        const privacyBtn = actions.createEl('button', {
+            cls: `pos-icon-btn pos-privacy-toggle ${this._isPrivacyShieldActive ? 'is-active' : ''}`,
+            attr: { 'aria-label': this._isPrivacyShieldActive ? 'Disable Privacy Shield' : 'Enable Privacy Shield (Blur Reflections)' }
+        });
+        setIcon(privacyBtn, this._isPrivacyShieldActive ? 'eye-off' : 'eye');
+        privacyBtn.onclick = () => {
+            this._isPrivacyShieldActive = !this._isPrivacyShieldActive;
+            this._containerEl?.toggleClass('is-privacy-shield-active', this._isPrivacyShieldActive);
+            setIcon(privacyBtn, this._isPrivacyShieldActive ? 'eye-off' : 'eye');
+            privacyBtn.toggleClass('is-active', this._isPrivacyShieldActive);
+        };
+
+        // 4. Resurface Serendipity button
+        const resurfaceBtn = actions.createEl('button', {
+            cls: 'pos-icon-btn pos-resurface-btn',
+            attr: { 'aria-label': 'Resurface a memory' }
+        });
+        setIcon(resurfaceBtn, 'sparkles');
+        resurfaceBtn.onclick = () => {
+            const memory = this.plugin.index.getRandomMemory();
+            if (!memory) {
+                new Notice('No memories available to resurface.');
+                return;
+            }
+            new Notice(`Resurfaced from ${moment(memory.createdAtMs).format('MMMM D, YYYY')}`);
+            this._searchQuery = memory.title;
+            this._searchOpen = true;
+            this._renderedCount = BATCH_SIZE;
+            this.renderHeaderBar(header);
+            this.updateStreamOnly();
+        };
+
+        // 5. Settings trigger
         const settingsBtn = actions.createEl('button', {
             cls: 'pos-icon-btn pos-settings-trigger',
             attr: { 'aria-label': 'Settings' }
@@ -597,11 +635,13 @@ export class DesktopHubView extends ItemView {
     }
 
     private renderComposer(parent: HTMLElement, isMobile: boolean): void {
+        if (parent === this._containerEl && this._composerSlotEl) {
+            parent = this._composerSlotEl;
+        }
+
         // === MOBILE VIEW COMPOSER ===
         if (isMobile) {
-            if (this._composerEl && this._composerEl.parentElement === parent) {
-                this._composerEl.remove();
-            }
+            parent.empty();
 
             // 1. Mobile Floating Search Capsule when search is open
             if (this._mobileSearchOpen || Boolean(this._searchQuery)) {
@@ -783,9 +823,7 @@ export class DesktopHubView extends ItemView {
         }
 
         // === DESKTOP / TABLET HERO COMPOSER ===
-        if (this._composerEl && this._composerEl.parentElement === parent) {
-            this._composerEl.remove();
-        }
+        parent.empty();
 
         const draft = this.plugin.capture.getDraft();
         const hasDraft = Boolean(draft && draft.trim().length > 0);

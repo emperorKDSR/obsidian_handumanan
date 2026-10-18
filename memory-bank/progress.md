@@ -43,6 +43,10 @@
 * [x] **Design Tokens & Native Lucide Icons**: Strictly calibrated tokens (`--diwa-radius: 12px`, `--diwa-radius-pill: 9999px`, `--diwa-shadow`, `--diwa-stream-max-width`) and native Obsidian Lucide icons via `setIcon(el, iconId)`.
 * [x] **Sanctuary Mode & Privacy Shield**: Preserved distraction-free writing state and click-to-reveal privacy shield while aligning with `obsidian_diwa`'s minimalist design system.
 * [x] **Stream Row Typographic Baseline Alignment**: Fixed vertical misalignment between timestamp and first row of note text via `align-items: baseline !important;`, direct Markdown rendering into `bodyEl`, and zero-margin resets on first children.
+* [x] **Top-Anchored Composer Slot**: Anchored desktop/tablet composer inside a dedicated `.pos-composer-slot` above `.pos-document-stream` so expanding/collapsing never re-appends the input box to the bottom of the stream.
+* [x] **Single-Row Icon Header**: Consolidated header controls into a single row with icon buttons for Search (inline expandable), Sanctuary (`feather`), Privacy Shield (`eye`), Resurface (`sparkles`), and Settings (`settings`), removing the `Select` button.
+* [x] **Inline Search Capsule Polish**: Fixed distorted close button oval, expanded width to avoid placeholder clipping, and aligned with theme-adaptive subtle borders.
+* [x] **Calm Icon Selection & Glyph Alignment**: Eliminated bright neon accent active backgrounds in favor of calm hover backgrounds and subtle borders; switched Sanctuary to `book-open` to align with journal identity.
 
 ### 5. Mobile Ergonomics & Verification
 * [x] Surface inline-edit failures, prevent duplicate saves, retain unsaved text, and reject a stale body without overwriting external changes.
