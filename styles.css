@@ -840,9 +840,10 @@ button.pos-search-inline-close:hover,
     left: 50%;
     transform: translateX(-50%);
     width: auto;
+    max-width: calc(100vw - 20px);
     box-sizing: border-box;
     z-index: 999;
-    padding: 6px 10px;
+    padding: 5px 8px;
     border-radius: 9999px;
     background: var(--background-secondary-alt);
     border: 1px solid var(--background-modifier-border);
@@ -852,7 +853,7 @@ button.pos-search-inline-close:hover,
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 6px;
     transition: bottom 0.22s cubic-bezier(0.4, 0, 0.2, 1), transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
 }
 
@@ -860,15 +861,19 @@ button.pos-search-inline-close:hover,
     display: none !important;
 }
 
-/* Hide Obsidian's floating mobile navigation bar when diwa-hide-mobile-navbar is active */
+/* Hide Obsidian's floating mobile navigation bar when pos-hide-mobile-navbar or diwa-hide-mobile-navbar is active */
+body.pos-hide-mobile-navbar .mobile-navbar,
+body.pos-hide-mobile-navbar .mobile-navbar-container,
+body.pos-hide-mobile-navbar .mobile-navbar-actions,
 body.diwa-hide-mobile-navbar .mobile-navbar,
-body.diwa-hide-mobile-navbar .mobile-navbar-container {
+body.diwa-hide-mobile-navbar .mobile-navbar-container,
+body.diwa-hide-mobile-navbar .mobile-navbar-actions {
     display: none !important;
     pointer-events: none !important;
 }
 
 /* When navigation bar IS visible on mobile, automatically lift the action bar above it */
-body:not(.diwa-hide-mobile-navbar) .pos-mobile-action-bar {
+body:not(.pos-hide-mobile-navbar):not(.diwa-hide-mobile-navbar) .pos-mobile-action-bar {
     bottom: calc(var(--mobile-navbar-height, 56px) + env(safe-area-inset-bottom, 8px) + 14px);
 }
 
@@ -876,10 +881,10 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-action-bar {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 42px;
-    height: 42px;
-    min-width: 42px;
-    min-height: 42px;
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    min-height: 38px;
     border-radius: 50%;
     border: 1px solid transparent;
     background: transparent;
@@ -893,8 +898,8 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-action-bar {
 }
 
 .pos-mobile-action-btn svg {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     stroke-width: 2px;
     transition: transform 0.15s ease, color 0.15s ease;
 }
@@ -1003,7 +1008,7 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-action-bar {
     transition: bottom 0.22s cubic-bezier(0.4, 0, 0.2, 1), transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
 }
 
-body:not(.diwa-hide-mobile-navbar) .pos-mobile-floating-search {
+body:not(.pos-hide-mobile-navbar):not(.diwa-hide-mobile-navbar) .pos-mobile-floating-search {
     bottom: calc(var(--mobile-navbar-height, 56px) + env(safe-area-inset-bottom, 8px) + 12px);
 }
 
@@ -1097,7 +1102,7 @@ body:not(.diwa-hide-mobile-navbar) .pos-mobile-floating-search {
     transition: bottom 0.22s cubic-bezier(0.4, 0, 0.2, 1), transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
 }
 
-body:not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
+body:not(.pos-hide-mobile-navbar):not(.diwa-hide-mobile-navbar) .pos-mobile-sticky-composer {
     bottom: calc(var(--mobile-navbar-height, 56px) + env(safe-area-inset-bottom, 8px) + 12px);
 }
 
@@ -2315,9 +2320,7 @@ body.is-phone .pos-inline-textarea {
     }
 
     .pos-header-actions {
-        display: flex;
-        align-items: center;
-        gap: 6px;
+        display: none !important;
     }
 
     .pos-search-container {

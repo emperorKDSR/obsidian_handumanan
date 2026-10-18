@@ -26,6 +26,22 @@ export const ICON_EYE_OFF = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-
 export const ICON_SPARKLES = '<path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
 export const ICON_HEART = '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
 export const ICON_BOOK = '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+export const ICON_PANEL_BOTTOM_SHOW_ID = "handumanan-navbar-show";
+export const ICON_PANEL_BOTTOM_SHOW_SVG = `<g transform="translate(8,8) scale(3.5)">
+    <rect x="2" y="2" width="20" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="2"/>
+    <line x1="2" y1="16" x2="22" y2="16" stroke="currentColor" stroke-width="2"/>
+    <polyline points="9 10 12 7 15 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>`;
+
+export const ICON_PANEL_BOTTOM_HIDE_ID = "handumanan-navbar-hide";
+export const ICON_PANEL_BOTTOM_HIDE_SVG = `<g transform="translate(8,8) scale(3.5)">
+    <rect x="2" y="2" width="20" height="20" rx="3" fill="none" stroke="currentColor" stroke-width="2"/>
+    <line x1="2" y1="16" x2="22" y2="16" stroke="currentColor" stroke-width="2"/>
+    <polyline points="9 7 12 10 15 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>`;
+
+export const ICON_PANEL_BOTTOM_ID = ICON_PANEL_BOTTOM_SHOW_ID;
+export const ICON_PANEL_BOTTOM_SVG = ICON_PANEL_BOTTOM_SHOW_SVG;
 
 export const INTROSPECTIVE_PROMPTS = [
     "What caught your eye or touched you today?",

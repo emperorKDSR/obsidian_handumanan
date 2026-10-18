@@ -44,3 +44,11 @@
 - On 2026-10-18, streamlined the desktop/tablet header bar into a single clean row: removed the `Select` pill button, converted `Sanctuary` into a `feather` icon button, and replaced the persistent search input with a `search` icon button that expands inline in the header row when clicked or triggered via `/` or `Cmd+F`.
 - On 2026-10-18, polished the inline search capsule styling: fixed close button oval distortion by overriding Obsidian default button styles, widened search input to prevent placeholder clipping, and switched the border to subtle theme-adaptive borders.
 - On 2026-10-18, aligned icon selection and glyph semantics with Handumanan's quiet monochrome philosophy: changed Sanctuary icon to `book-open`, and replaced loud neon green active fills with subtle hover background and muted border.
+- On 2026-10-18, refined Handumanan Mobile UI:
+  - Defaulted to hiding Obsidian's mobile navigation bar when Handumanan is open (`_isNavbarHidden: true` with `pos-hide-mobile-navbar` and `diwa-hide-mobile-navbar`), while safely restoring it on leaf switches and view close.
+  - Removed top workspace header action icons on mobile, preserving a calm `Handumanan WORKSPACE` title row.
+  - Re-anchored primary actions into the mobile frosted glass floating action bar (`.pos-mobile-action-bar`): Capture (`edit-3`), Search (`search`), Sanctuary Mode (`book-open`), Privacy Shield (`eye`/`eye-off`), Resurface Memory (`sparkles`), Obsidian Navigation Bar Toggle (`handumanan-navbar-show` / `handumanan-navbar-hide`), and Settings (`settings`).
+  - Removed `.is-primary` highlight styling from the capture note button so it sits seamlessly as a calm monochrome glyph matching the other floating action bar icons.
+  - Replaced the undersized navbar toggle glyph with full 100x100 scaled icons matching Lucide's 24x24 optical proportions and stroke weights: `handumanan-navbar-show` (panel with upward chevron) when hidden, and `handumanan-navbar-hide` (panel with downward chevron) when shown.
+  - Calibrated touch target widths to 38px with 6px gaps for comfortable, thumb-friendly operation across all mobile viewports.
+  - Successfully built and deployed bundle to `/Users/K26/Obsidian/K0000/.obsidian/plugins/handumanan/`.

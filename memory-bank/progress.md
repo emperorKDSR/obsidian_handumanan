@@ -53,4 +53,6 @@
 * [x] Add service tests for edit conflicts, indexing order/failures, privacy exclusions, and synthetic 10k-entry metadata startup.
 * [x] Port the DIWA iPhone keyboard gap fix: preserve the outer root scroller, prevent inner stream collapse, and detect Obsidian keyboard state.
 * [x] Deploy bundle (`main.js`, `manifest.json`, `styles.css`) to `/Users/K26/Obsidian/K0000/.obsidian/plugins/handumanan/`.
+* [x] **Mobile Obsidian Navigation Bar Default Hiding & Toggle**: Hide Obsidian mobile navbar by default on Handumanan open, restore safely on tab switches or view unload, and allow on-demand toggle via floating bar.
+* [x] **Mobile Clean Workspace Header & Floating Action Bar**: Hid top header icons on mobile for a calm title, and re-anchored Capture, Search, Sanctuary, Privacy Shield, Resurface, Navbar Toggle, and Settings into the frosted glass floating action bar.
 * [ ] Measure and inspect live Obsidian behavior on desktop/mobile, multiple themes, and large vaults.

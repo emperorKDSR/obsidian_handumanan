@@ -3,6 +3,8 @@ import type HandumananPlugin from '../main';
 import { 
     VIEW_TYPE_DESKTOP_HUB, 
     DESKTOP_HUB_ICON_ID, 
+    ICON_PANEL_BOTTOM_SHOW_ID,
+    ICON_PANEL_BOTTOM_HIDE_ID,
 } from '../constants';
 import { JournalEntry, JournalFilterMode, ScratchpadFilterMode, CaptureEntry } from '../types';
 import { MergeNotesModal } from '../modals/MergeNotesModal';
@@ -43,6 +45,7 @@ export class DesktopHubView extends ItemView {
     private _isPrivacyShieldActive: boolean = false;
     private _isSanctuaryMode: boolean = false;
     private _isEntryPrivate: boolean = false;
+    private _isNavbarHidden: boolean = true;
     _capturePending: number = 0;
     _taskPending: number = 0;
 
@@ -99,6 +102,14 @@ export class DesktopHubView extends ItemView {
         }
     }
 
+    private updateMobileNavbarVisibility(): void {
+        const isMobile = Platform.isMobile && !isTablet(this.app);
+        if (!isMobile) return;
+        const doc = this.contentEl?.ownerDocument || document;
+        doc.body.classList.toggle('pos-hide-mobile-navbar', this._isNavbarHidden);
+        doc.body.classList.toggle('diwa-hide-mobile-navbar', this._isNavbarHidden);
+    }
+
     async onOpen(): Promise<void> {
         this.contentEl.empty();
         this.contentEl.addClass('diwa-workspace-root');
@@ -106,6 +117,18 @@ export class DesktopHubView extends ItemView {
 
         const isMobile = Platform.isMobile && !isTablet(this.app);
         if (isMobile) {
+            this.updateMobileNavbarVisibility();
+            this.registerEvent(this.app.workspace.on('active-leaf-change', (leaf) => {
+                const doc = this.contentEl?.ownerDocument || document;
+                if (leaf === this.leaf) {
+                    doc.body.classList.toggle('pos-hide-mobile-navbar', this._isNavbarHidden);
+                    doc.body.classList.toggle('diwa-hide-mobile-navbar', this._isNavbarHidden);
+                } else {
+                    doc.body.classList.remove('pos-hide-mobile-navbar');
+                    doc.body.classList.remove('diwa-hide-mobile-navbar');
+                }
+            }));
+
             this._viewportCleanup = attachMobileSheetViewportBehavior({
                 sheetEl: this.contentEl,
                 scrollEl: this.contentEl,
@@ -156,6 +179,10 @@ export class DesktopHubView extends ItemView {
     }
 
     async onClose(): Promise<void> {
+        const doc = this.contentEl?.ownerDocument || document;
+        doc.body.classList.remove('pos-hide-mobile-navbar');
+        doc.body.classList.remove('diwa-hide-mobile-navbar');
+
         if (this._viewportCleanup) {
             this._viewportCleanup();
             this._viewportCleanup = null;
@@ -357,11 +384,22 @@ export class DesktopHubView extends ItemView {
         titleSection.createSpan({ cls: 'pos-header-logo', text: 'Handumanan' });
         titleSection.createSpan({ cls: 'pos-header-subtitle', text: 'WORKSPACE' });
 
-        // Mobile Expanded Search Container (below title row on mobile only)
-        if (isMobile && (this._mobileSearchOpen || Boolean(this._searchQuery))) {
-            const searchContainer = header.createDiv({ cls: 'pos-search-container' });
-            const searchInput = searchContainer.createEl('input', {
-                cls: 'pos-search-input',
+        // On mobile, header action icons are hidden and placed in the floating action bar
+        if (isMobile) {
+            return;
+        }
+
+        // Action Buttons Row (Single Row on Desktop/Tablet)
+        const actions = header.createDiv({ cls: 'pos-header-actions' });
+
+        // 1. Search (Desktop/Tablet: Icon button that expands inline in the same row)
+        if (this._searchOpen || Boolean(this._searchQuery)) {
+            const searchCapsule = actions.createDiv({ cls: 'pos-search-inline-capsule' });
+            const searchIcon = searchCapsule.createSpan({ cls: 'pos-search-inline-icon' });
+            setIcon(searchIcon, 'search');
+
+            const searchInput = searchCapsule.createEl('input', {
+                cls: 'pos-search-input pos-search-inline-input',
                 type: 'text',
                 placeholder: 'Search thoughts, #tags, or tasks...',
                 value: this._searchQuery
@@ -376,85 +414,29 @@ export class DesktopHubView extends ItemView {
                 }, 150);
             };
 
-            const clearBtn = searchContainer.createSpan({
-                cls: 'pos-search-clear',
-                text: '✕',
+            const closeBtn = searchCapsule.createEl('button', {
+                cls: 'pos-search-inline-close',
                 attr: { 'aria-label': 'Clear search' }
             });
-            clearBtn.onclick = () => {
+            setIcon(closeBtn, 'x');
+            closeBtn.onclick = () => {
                 this._searchQuery = '';
-                this._mobileSearchOpen = false;
+                this._searchOpen = false;
                 this._renderedCount = BATCH_SIZE;
                 this.renderHeaderBar(header);
                 this.updateStreamOnly();
             };
-        }
-
-        // Action Buttons Row (Single Row on Desktop/Tablet)
-        const actions = header.createDiv({ cls: 'pos-header-actions' });
-
-        // 1. Search (Desktop/Tablet: Icon button that expands inline in the same row; Mobile: Icon toggle)
-        if (!isMobile) {
-            if (this._searchOpen || Boolean(this._searchQuery)) {
-                const searchCapsule = actions.createDiv({ cls: 'pos-search-inline-capsule' });
-                const searchIcon = searchCapsule.createSpan({ cls: 'pos-search-inline-icon' });
-                setIcon(searchIcon, 'search');
-
-                const searchInput = searchCapsule.createEl('input', {
-                    cls: 'pos-search-input pos-search-inline-input',
-                    type: 'text',
-                    placeholder: 'Search thoughts, #tags, or tasks...',
-                    value: this._searchQuery
-                });
-
-                searchInput.oninput = () => {
-                    if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
-                    this._searchDebounceTimer = setTimeout(() => {
-                        this._searchQuery = searchInput.value.trim();
-                        this._renderedCount = BATCH_SIZE;
-                        this.updateStreamOnly();
-                    }, 150);
-                };
-
-                const closeBtn = searchCapsule.createEl('button', {
-                    cls: 'pos-search-inline-close',
-                    attr: { 'aria-label': 'Clear search' }
-                });
-                setIcon(closeBtn, 'x');
-                closeBtn.onclick = () => {
-                    this._searchQuery = '';
-                    this._searchOpen = false;
-                    this._renderedCount = BATCH_SIZE;
-                    this.renderHeaderBar(header);
-                    this.updateStreamOnly();
-                };
-            } else {
-                const searchBtn = actions.createEl('button', {
-                    cls: 'pos-icon-btn pos-search-toggle',
-                    attr: { 'aria-label': 'Search thoughts, #tags, or tasks (/)' }
-                });
-                setIcon(searchBtn, 'search');
-                searchBtn.onclick = () => {
-                    this._searchOpen = true;
-                    this.renderHeaderBar(header);
-                    const input = header.querySelector('.pos-search-input') as HTMLInputElement | null;
-                    if (input) input.focus();
-                };
-            }
         } else {
-            const searchToggleBtn = actions.createEl('button', {
-                cls: `pos-icon-btn pos-mobile-search-toggle ${this._mobileSearchOpen || this._searchQuery ? 'is-active' : ''}`,
-                attr: { 'aria-label': 'Search journal' }
+            const searchBtn = actions.createEl('button', {
+                cls: 'pos-icon-btn pos-search-toggle',
+                attr: { 'aria-label': 'Search thoughts, #tags, or tasks (/)' }
             });
-            setIcon(searchToggleBtn, 'search');
-            searchToggleBtn.onclick = () => {
-                this._mobileSearchOpen = !this._mobileSearchOpen;
-                if (!this._mobileSearchOpen) {
-                    this._searchQuery = '';
-                }
-                this._renderedCount = BATCH_SIZE;
+            setIcon(searchBtn, 'search');
+            searchBtn.onclick = () => {
+                this._searchOpen = true;
                 this.renderHeaderBar(header);
-                this.updateStreamOnly();
+                const input = header.querySelector('.pos-search-input') as HTMLInputElement | null;
+                if (input) input.focus();
             };
         }
 
@@ -690,10 +672,10 @@ export class DesktopHubView extends ItemView {
                 const actionBar = parent.createDiv({ cls: 'pos-mobile-action-bar' });
                 this._composerEl = actionBar;
 
-                // Capture Note trigger
+                // 1. Capture Note trigger
                 const newBtn = actionBar.createEl('button', {
                     cls: 'pos-mobile-action-btn pos-mobile-action-new',
-                    attr: { 'aria-label': 'Capture thought or task' }
+                    attr: { 'aria-label': 'Capture reflection or thought' }
                 });
                 setIcon(newBtn, 'edit-3');
                 newBtn.onclick = () => {
@@ -701,10 +683,11 @@ export class DesktopHubView extends ItemView {
                     this.renderComposer(parent, true);
                 };
 
-                // Search trigger
+                // 2. Search trigger
+                const isSearchActive = this._mobileSearchOpen || Boolean(this._searchQuery);
                 const searchBtn = actionBar.createEl('button', {
-                    cls: `pos-mobile-action-btn ${this._mobileSearchOpen ? 'is-active' : ''}`,
-                    attr: { 'aria-label': 'Search' }
+                    cls: `pos-mobile-action-btn ${isSearchActive ? 'is-active' : ''}`,
+                    attr: { 'aria-label': 'Search journal' }
                 });
                 setIcon(searchBtn, 'search');
                 searchBtn.onclick = () => {
@@ -712,22 +695,70 @@ export class DesktopHubView extends ItemView {
                     this.renderComposer(parent, true);
                 };
 
-                // Select mode trigger
-                const selectBtn = actionBar.createEl('button', {
-                    cls: `pos-mobile-action-btn ${this._selectionMode ? 'is-active' : ''}`,
-                    attr: { 'aria-label': 'Selection mode' }
+                // 3. Sanctuary Mode toggle
+                const sanctuaryBtn = actionBar.createEl('button', {
+                    cls: `pos-mobile-action-btn pos-sanctuary-btn ${this._isSanctuaryMode ? 'is-active' : ''}`,
+                    attr: { 'aria-label': this._isSanctuaryMode ? 'Exit Sanctuary Focus Mode' : 'Toggle Sanctuary Focus Mode' }
                 });
-                setIcon(selectBtn, 'check-square');
-                selectBtn.onclick = () => {
-                    this._selectionMode = !this._selectionMode;
-                    if (!this._selectionMode) this._selectedEntryIds.clear();
-                    this.updateSelectionBar();
-                    this.updateStreamOnly();
+                setIcon(sanctuaryBtn, 'book-open');
+                sanctuaryBtn.onclick = () => {
+                    this._isSanctuaryMode = !this._isSanctuaryMode;
+                    this._containerEl?.toggleClass('is-sanctuary-mode', this._isSanctuaryMode);
+                    sanctuaryBtn.toggleClass('is-active', this._isSanctuaryMode);
+                    new Notice(this._isSanctuaryMode ? 'Entered Sanctuary mode' : 'Exited Sanctuary mode');
                 };
 
-                // Settings trigger
+                // 4. Privacy Shield toggle
+                const privacyBtn = actionBar.createEl('button', {
+                    cls: `pos-mobile-action-btn pos-privacy-toggle ${this._isPrivacyShieldActive ? 'is-active' : ''}`,
+                    attr: { 'aria-label': this._isPrivacyShieldActive ? 'Disable Privacy Shield' : 'Enable Privacy Shield (Blur Reflections)' }
+                });
+                setIcon(privacyBtn, this._isPrivacyShieldActive ? 'eye-off' : 'eye');
+                privacyBtn.onclick = () => {
+                    this._isPrivacyShieldActive = !this._isPrivacyShieldActive;
+                    this._containerEl?.toggleClass('is-privacy-shield-active', this._isPrivacyShieldActive);
+                    setIcon(privacyBtn, this._isPrivacyShieldActive ? 'eye-off' : 'eye');
+                    privacyBtn.toggleClass('is-active', this._isPrivacyShieldActive);
+                    new Notice(this._isPrivacyShieldActive ? 'Privacy Shield enabled' : 'Privacy Shield disabled');
+                };
+
+                // 5. Resurface Serendipity button
+                const resurfaceBtn = actionBar.createEl('button', {
+                    cls: 'pos-mobile-action-btn pos-resurface-btn',
+                    attr: { 'aria-label': 'Resurface a memory' }
+                });
+                setIcon(resurfaceBtn, 'sparkles');
+                resurfaceBtn.onclick = () => {
+                    const memory = this.plugin.index.getRandomMemory();
+                    if (!memory) {
+                        new Notice('No memories available to resurface.');
+                        return;
+                    }
+                    new Notice(`Resurfaced from ${moment(memory.createdAtMs).format('MMMM D, YYYY')}`);
+                    this._searchQuery = memory.title;
+                    this._renderedCount = BATCH_SIZE;
+                    this.updateStreamOnly();
+                    searchBtn.addClass('is-active');
+                };
+
+                // 6. Navigation Bar toggle
+                const navbarBtn = actionBar.createEl('button', {
+                    cls: `pos-mobile-action-btn pos-navbar-toggle ${!this._isNavbarHidden ? 'is-active' : ''}`,
+                    attr: { 'aria-label': this._isNavbarHidden ? 'Show Obsidian navigation bar' : 'Hide Obsidian navigation bar' }
+                });
+                setIcon(navbarBtn, this._isNavbarHidden ? ICON_PANEL_BOTTOM_SHOW_ID : ICON_PANEL_BOTTOM_HIDE_ID);
+                navbarBtn.onclick = () => {
+                    this._isNavbarHidden = !this._isNavbarHidden;
+                    this.updateMobileNavbarVisibility();
+                    setIcon(navbarBtn, this._isNavbarHidden ? ICON_PANEL_BOTTOM_SHOW_ID : ICON_PANEL_BOTTOM_HIDE_ID);
+                    navbarBtn.toggleClass('is-active', !this._isNavbarHidden);
+                    navbarBtn.setAttribute('aria-label', this._isNavbarHidden ? 'Show Obsidian navigation bar' : 'Hide Obsidian navigation bar');
+                    new Notice(this._isNavbarHidden ? 'Obsidian navigation bar hidden' : 'Obsidian navigation bar shown');
+                };
+
+                // 7. Settings trigger
                 const settingsBtn = actionBar.createEl('button', {
-                    cls: 'pos-mobile-action-btn',
+                    cls: 'pos-mobile-action-btn pos-settings-trigger',
                     attr: { 'aria-label': 'Settings' }
                 });
                 setIcon(settingsBtn, 'settings');

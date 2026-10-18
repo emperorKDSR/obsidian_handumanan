@@ -5,7 +5,11 @@ import {
     VIEW_TYPE_MOBILE_HUB, 
     VIEW_TYPE_TABLET_HUB, 
     DESKTOP_HUB_ICON_ID, 
-    DESKTOP_HUB_ICON_SVG 
+    DESKTOP_HUB_ICON_SVG,
+    ICON_PANEL_BOTTOM_SHOW_ID,
+    ICON_PANEL_BOTTOM_SHOW_SVG,
+    ICON_PANEL_BOTTOM_HIDE_ID,
+    ICON_PANEL_BOTTOM_HIDE_SVG
 } from './constants';
 import { HandumananSettings } from './types';
 import { isTablet } from './utils';
@@ -69,6 +73,8 @@ export default class HandumananPlugin extends Plugin {
 
         // Add Ribbon & Command Icons
         addIcon(DESKTOP_HUB_ICON_ID, DESKTOP_HUB_ICON_SVG);
+        addIcon(ICON_PANEL_BOTTOM_SHOW_ID, ICON_PANEL_BOTTOM_SHOW_SVG);
+        addIcon(ICON_PANEL_BOTTOM_HIDE_ID, ICON_PANEL_BOTTOM_HIDE_SVG);
 
         this.addRibbonIcon(DESKTOP_HUB_ICON_ID, 'Handumanan', () => {
             void this.activateWorkspace();
