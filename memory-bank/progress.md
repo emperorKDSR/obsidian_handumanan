@@ -55,4 +55,10 @@
 * [x] Deploy bundle (`main.js`, `manifest.json`, `styles.css`) to `/Users/K26/Obsidian/K0000/.obsidian/plugins/handumanan/`.
 * [x] **Mobile Obsidian Navigation Bar Default Hiding & Toggle**: Hide Obsidian mobile navbar by default on Handumanan open, restore safely on tab switches or view unload, and allow on-demand toggle via floating bar.
 * [x] **Mobile Clean Workspace Header & Floating Action Bar**: Hid top header icons on mobile for a calm title, and re-anchored Capture, Search, Sanctuary, Privacy Shield, Resurface, Navbar Toggle, and Settings into the frosted glass floating action bar.
+* [x] **DIWA Mobile Stream Replication**:
+  - Replaced `.is-mobile-card` and top header bar with Horizon-style continuous outliner stream rows (`.pos-note-stream-item.pos-mobile-stream-row.pos-rail-note-item`) starting directly on Line 1.
+  - Left column allows note text to start flush on the left without cluttering leading document icons, showing `.pos-mobile-select-cb` exclusively when in selection mode.
+  - Configured mobile date section dividers to natural regular case (e.g. `Today · October 18`) and harmonized font color with the timestamp font color (`var(--text-faint)`).
+  - Added direct-child strike-through CSS scoping and `getDirectListItemText()` subtask isolation.
+  - Deployed verified bundle to `/Users/K26/Obsidian/K0000/.obsidian/plugins/handumanan/`.
 * [ ] Measure and inspect live Obsidian behavior on desktop/mobile, multiple themes, and large vaults.

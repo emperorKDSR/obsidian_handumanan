@@ -52,3 +52,12 @@
   - Replaced the undersized navbar toggle glyph with full 100x100 scaled icons matching Lucide's 24x24 optical proportions and stroke weights: `handumanan-navbar-show` (panel with upward chevron) when hidden, and `handumanan-navbar-hide` (panel with downward chevron) when shown.
   - Calibrated touch target widths to 38px with 6px gaps for comfortable, thumb-friendly operation across all mobile viewports.
   - Successfully built and deployed bundle to `/Users/K26/Obsidian/K0000/.obsidian/plugins/handumanan/`.
+- On 2026-10-18, replicated DIWA's Mobile Stream UI/UX:
+  - Replaced boxy `.is-mobile-card` and top header bar with Horizon-style continuous outliner stream rows (`.pos-note-stream-item.pos-mobile-stream-row.pos-rail-note-item`) starting immediately on Line 1.
+  - Left column allows note text to start flush on the left without cluttering leading document icons, showing `.pos-mobile-select-cb` exclusively when in selection mode.
+  - Center column features `.pos-rail-note-content` with `.pos-rail-note-snippet.pos-note-body` (`0.88em`, `line-height: 1.4`), tags, and Privacy Shield support.
+  - Right column features compact trailing meta cluster (`.pos-mobile-card-meta-right`) with star indicator, tabular timestamp, and minimal `⋯` action trigger.
+  - Configured mobile date section dividers to natural regular case (e.g. `Today · October 18`) and harmonized font color with the timestamp font color (`var(--text-faint)`).
+  - Added direct-child strike-through CSS scoping and `getDirectListItemText()` subtask isolation.
+  - Production bundle verified with 0 errors and deployed to `/Users/K26/Obsidian/K0000/.obsidian/plugins/handumanan/`.
+

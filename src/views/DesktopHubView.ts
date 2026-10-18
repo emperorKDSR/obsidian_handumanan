@@ -1176,16 +1176,24 @@ export class DesktopHubView extends ItemView {
             dateCounts.set(key, (dateCounts.get(key) || 0) + 1);
         }
 
+        const isMobileStream = Platform.isMobile && !isTablet(this.app);
         let lastDateKey = '';
         for (const entry of visibleEntries) {
             const dateKey = this.getDateHeadingForEntry(entry);
             if (dateKey !== lastDateKey) {
                 lastDateKey = dateKey;
-                const divider = container.createDiv({ cls: 'pos-date-divider' });
-                divider.createSpan({ cls: 'pos-date-heading', text: dateKey });
-                const count = dateCounts.get(dateKey) || 1;
-                divider.createSpan({ cls: 'pos-date-count', text: `${count}` });
-                divider.createDiv({ cls: 'pos-date-line' });
+                if (isMobileStream) {
+                    const divider = container.createDiv({ cls: 'pos-rail-section-header pos-mobile-stream-date-header' });
+                    divider.createSpan({ cls: 'pos-date-heading', text: dateKey });
+                    const count = dateCounts.get(dateKey) || 1;
+                    divider.createSpan({ cls: 'pos-rail-section-badge pos-date-count', text: `${count}` });
+                } else {
+                    const divider = container.createDiv({ cls: 'pos-date-divider' });
+                    divider.createSpan({ cls: 'pos-date-heading', text: dateKey });
+                    const count = dateCounts.get(dateKey) || 1;
+                    divider.createSpan({ cls: 'pos-date-count', text: `${count}` });
+                    divider.createDiv({ cls: 'pos-date-line' });
+                }
             }
 
             this.renderNoteItem(container, entry);
@@ -1242,6 +1250,7 @@ export class DesktopHubView extends ItemView {
             dateCounts.set(key, (dateCounts.get(key) || 0) + 1);
         }
 
+        const isMobileStream = Platform.isMobile && !isTablet(this.app);
         const dateDividers = container.querySelectorAll<HTMLElement>('.pos-date-heading');
         let lastDateKey = dateDividers.length > 0 ? dateDividers[dateDividers.length - 1].textContent || '' : '';
 
@@ -1249,11 +1258,18 @@ export class DesktopHubView extends ItemView {
             const dateKey = this.getDateHeadingForEntry(entry);
             if (dateKey !== lastDateKey) {
                 lastDateKey = dateKey;
-                const divider = container.createDiv({ cls: 'pos-date-divider' });
-                divider.createSpan({ cls: 'pos-date-heading', text: dateKey });
-                const count = dateCounts.get(dateKey) || 1;
-                divider.createSpan({ cls: 'pos-date-count', text: `${count}` });
-                divider.createDiv({ cls: 'pos-date-line' });
+                if (isMobileStream) {
+                    const divider = container.createDiv({ cls: 'pos-rail-section-header pos-mobile-stream-date-header' });
+                    divider.createSpan({ cls: 'pos-date-heading', text: dateKey });
+                    const count = dateCounts.get(dateKey) || 1;
+                    divider.createSpan({ cls: 'pos-rail-section-badge pos-date-count', text: `${count}` });
+                } else {
+                    const divider = container.createDiv({ cls: 'pos-date-divider' });
+                    divider.createSpan({ cls: 'pos-date-heading', text: dateKey });
+                    const count = dateCounts.get(dateKey) || 1;
+                    divider.createSpan({ cls: 'pos-date-count', text: `${count}` });
+                    divider.createDiv({ cls: 'pos-date-line' });
+                }
             }
 
             this.renderNoteItem(container, entry);
@@ -1306,59 +1322,93 @@ export class DesktopHubView extends ItemView {
         const isMobile = Platform.isMobile && !isTablet(this.app);
         const timeStr = moment(entry.createdAtMs).format('h:mm A');
 
-        // Mobile Micro-Card Layout
+        // Mobile Horizon UI/UX Outliner Row Layout (.pos-mobile-stream-row)
         if (isMobile) {
-            item.addClass('is-mobile-card');
+            item.addClass('pos-mobile-stream-row', hasTasks ? 'pos-rail-task-item' : 'pos-rail-note-item');
 
             if (isEditing) {
+                item.addClass('is-editing');
                 const editorWrapper = item.createDiv({ cls: 'pos-note-content-wrap pos-inline-editor-wrap' });
                 this.renderInlineEditor(editorWrapper, entry);
                 return;
             }
 
-            const cardHeader = item.createDiv({ cls: 'pos-mobile-card-header' });
-            const headerLeft = cardHeader.createDiv({ cls: 'pos-mobile-card-header-left' });
-
+            // Left Column: selection checkbox when in selection mode
             if (this._selectionMode) {
-                const cb = headerLeft.createEl('input', { type: 'checkbox', cls: 'pos-select-checkbox' });
-                cb.checked = isSelected;
-                cb.onclick = (e) => {
+                const selectCheckbox = item.createEl('input', {
+                    type: 'checkbox',
+                    cls: 'pos-mobile-select-cb'
+                });
+                selectCheckbox.checked = isSelected;
+                selectCheckbox.onclick = (e) => {
                     e.stopPropagation();
-                    if (cb.checked) this._selectedEntryIds.add(entry.id);
-                    else this._selectedEntryIds.delete(entry.id);
-                    item.toggleClass('is-selected', cb.checked);
+                    if (selectCheckbox.checked) {
+                        this._selectedEntryIds.add(entry.id);
+                    } else {
+                        this._selectedEntryIds.delete(entry.id);
+                    }
+                    item.toggleClass('is-selected', selectCheckbox.checked);
                     this.updateSelectionBar();
                 };
             }
 
-            headerLeft.createSpan({ cls: 'pos-note-time', text: timeStr });
+            // Center: Note content wrap starting directly on Line 1
+            const contentWrap = item.createDiv({ cls: 'pos-rail-note-content pos-note-content-wrap' });
+            const bodyEl = contentWrap.createDiv({ cls: 'pos-rail-note-snippet pos-note-body markdown-rendered' });
+            this.renderEntryMarkdown(bodyEl, entry);
 
-            const actionsEl = cardHeader.createDiv({ cls: 'pos-note-actions pos-mobile-card-actions' });
-            const starBtn = actionsEl.createSpan({
-                cls: `pos-action-icon pos-star-btn ${isImportant ? 'is-starred' : ''}`,
-                attr: { 'aria-label': 'Toggle Star' }
+            // Badges container (tags, private)
+            if ((entry.tags && entry.tags.length > 0) || entry.private) {
+                const badges = contentWrap.createDiv({ cls: 'pos-note-badges' });
+                if (entry.private) {
+                    const privBadge = badges.createSpan({ cls: 'pos-tag-badge' });
+                    setIcon(privBadge, 'lock');
+                }
+                if (entry.tags) {
+                    for (const t of entry.tags) {
+                        const tagBadge = badges.createSpan({ cls: 'pos-tag-badge', text: `#${t}` });
+                        tagBadge.onclick = (e) => {
+                            e.stopPropagation();
+                            this._activeFilter = t;
+                            if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
+                            this.updateStreamOnly();
+                        };
+                    }
+                }
+            }
+
+            // Right Trailing Cluster: Star indicator (when important) + Compact Timestamp + Minimal More Menu
+            const metaRight = item.createDiv({ cls: 'pos-mobile-card-meta-right' });
+
+            if (isImportant) {
+                const starIcon = metaRight.createSpan({
+                    cls: 'pos-action-icon pos-star-icon is-starred',
+                    attr: { 'aria-label': 'Starred' }
+                });
+                setIcon(starIcon, 'star');
+                starIcon.onclick = async (e) => {
+                    e.stopPropagation();
+                    const newState = await this.plugin.capture.toggleNoteImportance(entry.filePath);
+                    entry.favorite = newState;
+                    entry.pinned = newState;
+                    this.invalidateRenderCacheForFile(entry.filePath);
+                    this.updateStreamOnly();
+                    if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
+                };
+            }
+
+            metaRight.createSpan({ cls: 'pos-note-time', text: timeStr });
+
+            const moreBtn = metaRight.createSpan({
+                cls: 'pos-action-icon pos-action-more',
+                attr: { 'aria-label': 'More options' }
             });
-            setIcon(starBtn, 'star');
-            starBtn.onclick = async (e) => {
-                e.stopPropagation();
-                const newState = await this.plugin.capture.toggleNoteImportance(entry.filePath);
-                entry.favorite = newState;
-                entry.pinned = newState;
-                this.invalidateRenderCacheForFile(entry.filePath);
-                this.updateStreamOnly();
-                if (this._filterBarEl) this.renderFilterBar(this._filterBarEl);
-            };
-
-            const moreBtn = actionsEl.createSpan({ cls: 'pos-action-icon pos-action-more', attr: { 'aria-label': 'Options' } });
             setIcon(moreBtn, 'more-horizontal');
             moreBtn.onclick = (e) => {
                 e.stopPropagation();
                 this.openNoteActionMenu(e, entry);
             };
 
-            const contentWrap = item.createDiv({ cls: 'pos-note-content-wrap' });
-            const bodyEl = contentWrap.createDiv({ cls: 'pos-note-body markdown-rendered' });
-            this.renderEntryMarkdown(bodyEl, entry);
             return;
         }
 
@@ -1489,6 +1539,22 @@ export class DesktopHubView extends ItemView {
         }
     }
 
+    private getDirectListItemText(li: HTMLElement): string {
+        let text = '';
+        for (let i = 0; i < li.childNodes.length; i++) {
+            const node = li.childNodes[i];
+            if (node.nodeType === Node.TEXT_NODE) {
+                text += node.textContent || '';
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                const el = node as HTMLElement;
+                if (el.tagName === 'UL' || el.tagName === 'OL') continue;
+                if (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'checkbox') continue;
+                text += el.textContent || '';
+            }
+        }
+        return text.replace(/^\[[ xX]\]\s*/, '').trim();
+    }
+
     private attachInteractiveElements(container: HTMLElement, entry: JournalEntry): void {
         // 1. Task Checkboxes (Live In-Place Toggling with Optimistic Strike-Through)
         const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
@@ -1497,13 +1563,19 @@ export class DesktopHubView extends ItemView {
             cb.addClass('pos-interactive-checkbox');
 
             const listItem = cb.closest('li');
+            const isSubtask = Boolean(listItem && listItem.parentElement?.closest('li'));
+
             if (listItem) {
                 listItem.toggleClass('is-checked', cb.checked);
                 listItem.setAttribute('data-task', cb.checked ? 'x' : ' ');
             }
 
-            const cleanLiText = listItem ? (listItem.textContent || '').replace(/^\[[ xX]\]\s*/, '').trim() : '';
-            const matchedTask = entry.tasks ? (entry.tasks.find(t => t.title && cleanLiText && (cleanLiText.includes(t.title) || t.title.includes(cleanLiText))) || entry.tasks[idx]) : undefined;
+            const cleanLiText = listItem ? this.getDirectListItemText(listItem) : '';
+
+            // Top-level task matching: subtasks must never match top-level entry.tasks
+            const matchedTask = (!isSubtask && Array.isArray(entry.tasks))
+                ? (entry.tasks.find(t => t.title && cleanLiText && (cleanLiText.includes(t.title) || t.title.includes(cleanLiText))) || entry.tasks[idx])
+                : undefined;
 
             cb.onclick = async (e) => {
                 e.stopPropagation();
@@ -1524,6 +1596,7 @@ export class DesktopHubView extends ItemView {
                     const lineIdx = matchedTask ? matchedTask.lineIndex : -1;
                     const taskTitle = matchedTask ? matchedTask.title : (cleanLiText || undefined);
                     await this.plugin.capture.toggleTaskInFile(entry.filePath, lineIdx, isChecked, taskTitle);
+                    this.plugin.refreshCoordinator?.notifyRefresh('journal');
                 } catch (err) {
                     cb.checked = !isChecked;
                     if (listItem) {
